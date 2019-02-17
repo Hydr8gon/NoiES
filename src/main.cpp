@@ -29,74 +29,26 @@ uint16_t mapper_registers[4];
 uint16_t rom_address;
 uint16_t vrom_address;
 
-uint8_t framebuffer[256 * 240 * 3];
+uint32_t framebuffer[256 * 240];
 std::chrono::steady_clock::time_point timer;
 
-const uint8_t palette[] = {
-    0x75, 0x75, 0x75, // 0x00
-    0x27, 0x1B, 0x8F, // 0x01
-    0x00, 0x00, 0xAB, // 0x02
-    0x47, 0x00, 0x9F, // 0x03
-    0x8F, 0x00, 0x77, // 0x04
-    0xAB, 0x00, 0x13, // 0x05
-    0xA7, 0x00, 0x00, // 0x06
-    0x7F, 0x0B, 0x00, // 0x07
-    0x43, 0x2F, 0x00, // 0x08
-    0x00, 0x47, 0x00, // 0x09
-    0x00, 0x51, 0x00, // 0x0A
-    0x00, 0x3F, 0x17, // 0x0B
-    0x1B, 0x3F, 0x5F, // 0x0C
-    0x00, 0x00, 0x00, // 0x0D
-    0x00, 0x00, 0x00, // 0x0E
-    0x00, 0x00, 0x00, // 0x0F
-    0xBC, 0xBC, 0xBC, // 0x10
-    0x00, 0x73, 0xEF, // 0x11
-    0x23, 0x3B, 0xEF, // 0x12
-    0x83, 0x00, 0xF3, // 0x13
-    0xBF, 0x00, 0xBF, // 0x14
-    0xE7, 0x00, 0x5B, // 0x15
-    0xDB, 0x2B, 0x00, // 0x16
-    0xCB, 0x4F, 0x0F, // 0x17
-    0x8B, 0x73, 0x00, // 0x18
-    0x00, 0x97, 0x00, // 0x19
-    0x00, 0xAB, 0x00, // 0x1A
-    0x00, 0x93, 0x3B, // 0x1B
-    0x00, 0x83, 0x8B, // 0x1C
-    0x00, 0x00, 0x00, // 0x1D
-    0x00, 0x00, 0x00, // 0x1E
-    0x00, 0x00, 0x00, // 0x1F
-    0xFF, 0xFF, 0xFF, // 0x20
-    0x3F, 0xBF, 0xFF, // 0x21
-    0x5F, 0x97, 0xFF, // 0x22
-    0xA7, 0x8B, 0xFD, // 0x23
-    0xF7, 0x7B, 0xFF, // 0x24
-    0xFF, 0x77, 0xB7, // 0x25
-    0xFF, 0x77, 0x63, // 0x26
-    0xFF, 0x9B, 0x3B, // 0x27
-    0xF3, 0xBF, 0x3F, // 0x28
-    0x83, 0xD3, 0x13, // 0x29
-    0x4F, 0xDF, 0x4B, // 0x2A
-    0x58, 0xF8, 0x98, // 0x2B
-    0x00, 0xEB, 0xDB, // 0x2C
-    0x00, 0x00, 0x00, // 0x2D
-    0x00, 0x00, 0x00, // 0x2E
-    0x00, 0x00, 0x00, // 0x2F
-    0xFF, 0xFF, 0xFF, // 0x30
-    0xAB, 0xE7, 0xFF, // 0x31
-    0xC7, 0xD7, 0xFF, // 0x32
-    0xD7, 0xCB, 0xFF, // 0x33
-    0xFF, 0xC7, 0xFF, // 0x34
-    0xFF, 0xC7, 0xDB, // 0x35
-    0xFF, 0xBF, 0xB3, // 0x36
-    0xFF, 0xDB, 0xAB, // 0x37
-    0xFF, 0xE7, 0xA3, // 0x38
-    0xE3, 0xFF, 0xA3, // 0x39
-    0xAB, 0xF3, 0xBF, // 0x3A
-    0xB3, 0xFF, 0xFC, // 0x3B
-    0x9F, 0xFF, 0xF3, // 0x3C
-    0x00, 0x00, 0x00, // 0x3D
-    0x00, 0x00, 0x00, // 0x3E
-    0x00, 0x00, 0x00, // 0x3F
+const uint32_t palette[] = {
+    0x757575FF, 0x271B8FFF, 0x0000ABFF, 0x47009FFF,
+    0x8F0077FF, 0xAB0013FF, 0xA70000FF, 0x7F0B00FF,
+    0x432F00FF, 0x004700FF, 0x005100FF, 0x003F17FF,
+    0x1B3F5FFF, 0x000000FF, 0x000000FF, 0x000000FF,
+    0xBCBCBCFF, 0x0073EFFF, 0x233BEFFF, 0x8300F3FF,
+    0xBF00BFFF, 0xE7005BFF, 0xDB2B00FF, 0xCB4F0FFF,
+    0x8B7300FF, 0x009700FF, 0x00AB00FF, 0x00933BFF,
+    0x00838BFF, 0x000000FF, 0x000000FF, 0x000000FF,
+    0xFFFFFFFF, 0x3FBFFFFF, 0x5F97FFFF, 0xA78BFDFF,
+    0xF77BFFFF, 0xFF77B7FF, 0xFF7763FF, 0xFF9B3BFF,
+    0xF3BF3FFF, 0x83D313FF, 0x4FDF4BFF, 0x58F898FF,
+    0x00EBDBFF, 0x000000FF, 0x000000FF, 0x000000FF,
+    0xFFFFFFFF, 0xABE7FFFF, 0xC7D7FFFF, 0xD7CBFFFF,
+    0xFFC7FFFF, 0xFFC7DBFF, 0xFFBFB3FF, 0xFFDBABFF,
+    0xFFE7A3FF, 0xE3FFA3FF, 0xABF3BFFF, 0xB3FFFCFF,
+    0x9FFFF3FF, 0x000000FF, 0x000000FF, 0x000000FF
 };
 
 // Zero page addressing: Use the immediate value as a memory address
@@ -660,7 +612,7 @@ void cpu() {
 }
 
 void draw() {
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGB, GL_UNSIGNED_BYTE, framebuffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, framebuffer);
     glBegin(GL_QUADS);
     glTexCoord2i(1, 1); glVertex2f( 1, -1);
     glTexCoord2i(0, 1); glVertex2f(-1, -1);
@@ -680,30 +632,51 @@ void ppu() {
 
     while (target_ppu_cycles > ppu_cycles) {
         if (scanline >= 1 && scanline <= 240) { // Draw visible lines
+            uint8_t y = scanline - 1;
+
             if (ppu_cycles >= 1 && ppu_cycles <= 256) { // Draw the background
                 uint8_t x = ppu_cycles - 1;
-                uint8_t y = scanline - 1;
                 uint16_t table_offset = 0x2000 + (memory[0x2000] & 0x03) * 0x0400;
                 uint16_t pattern_offset = (memory[0x2000] & 0x10) ? 0x1000 : 0x0000;
 
                 // Get the lower 2 bits of the palette index
                 uint16_t tile = ppu_memory[table_offset + (y / 8) * 32 + x / 8] * 16;
-                uint8_t bit_low = ppu_memory[pattern_offset + tile + y % 8] & (0x80 >> (x % 8)) ? 0x01 : 0x00;
-                uint8_t bit_high = ppu_memory[pattern_offset + tile + y % 8 + 8] & (0x80 >> (x % 8)) ? 0x02 : 0x00;
+                uint8_t bits_low = ppu_memory[pattern_offset + tile + y % 8] & (0x80 >> (x % 8)) ? 0x01 : 0x00;
+                bits_low |= ppu_memory[pattern_offset + tile + y % 8 + 8] & (0x80 >> (x % 8)) ? 0x02 : 0x00;
 
                 // Get the upper 2 bits of the palette index
-                uint8_t attrib = ppu_memory[table_offset + 0x03C0 + (y / 32) * 8 + x / 32];
+                uint8_t bits_high = ppu_memory[table_offset + 0x03C0 + (y / 32) * 8 + x / 32];
                 if ((x / 8) % 2 == 0 && (y / 8) % 2 == 0) // Top left
-                    attrib = (attrib & 0x03) << 2;
+                    bits_high = (bits_high & 0x03) << 2;
                 else if ((x / 8) % 2 == 1 && (y / 8) % 2 == 0) // Top right
-                    attrib = (attrib & 0x0C) << 0;
+                    bits_high = (bits_high & 0x0C) << 0;
                 else if ((x / 8) % 2 == 0 && (y / 8) % 2 == 1) // Bottom left
-                    attrib = (attrib & 0x30) >> 2;
+                    bits_high = (bits_high & 0x30) >> 2;
                 else // Bottom right
-                    attrib = (attrib & 0xC0) >> 4;
+                    bits_high = (bits_high & 0xC0) >> 4;
 
-                // Draw a pixel
-                memcpy(&framebuffer[(y * 256 + x) * 3], &palette[ppu_memory[0x3F00 | attrib | bit_high | bit_low] * 3], 3);
+                // Draw a pixel if it isn't covered
+                if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]])
+                    framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
+            }
+            else if (ppu_cycles >= 257 && ppu_cycles <= 320) { // Draw the sprites
+                uint8_t *sprite = &spr_memory[(ppu_cycles - 257) * 4];
+
+                if (*sprite <= y && *sprite + 8 > y) {
+                    uint8_t x = *(sprite + 3);
+                    uint16_t pattern_offset = (memory[0x2000] & 0x08) ? 0x1000 : 0x0000;
+                    uint16_t tile = *(sprite + 1) * 16;
+                    uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
+
+                    // Draw a sprite line on the next line
+                    for (int i = x; i < x + 8; i++) {
+                        // Get the lower 2 bits of the palette index
+                        uint8_t bits_low = ppu_memory[pattern_offset + tile + (y - *sprite)] & (0x80 >> (i - x)) ? 0x01 : 0x00;
+                        bits_low |= ppu_memory[pattern_offset + tile + (y - *sprite) + 8] & (0x80 >> (i - x)) ? 0x02 : 0x00;
+
+                        framebuffer[(y + 1) * 256 + i] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
+                    }
+                }
             }
         } else if (scanline == 242 && ppu_cycles == 1) { // Start the V-blank period
             memory[0x2002] |= 0x80;
@@ -724,6 +697,10 @@ void ppu() {
             scanline = 0;
 
             draw();
+
+            // Clear the framebuffer
+            for (int i = 0; i < 256 * 240; i++)
+                framebuffer[i] = palette[ppu_memory[0x3F00]];
 
             // Limit FPS to 60
             std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - timer;
