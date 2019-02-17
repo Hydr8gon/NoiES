@@ -703,7 +703,7 @@ void ppu() {
                     attrib = (attrib & 0xC0) >> 4;
 
                 // Draw a pixel
-                memcpy(&framebuffer[(y * 256 + x) * 3], &palette[ppu_memory[0x3F10 | attrib | bit_high | bit_low] * 3], 3);
+                memcpy(&framebuffer[(y * 256 + x) * 3], &palette[ppu_memory[0x3F00 | attrib | bit_high | bit_low] * 3], 3);
             }
         } else if (scanline == 242 && ppu_cycles == 1) { // Start the V-blank period
             memory[0x2002] |= 0x80;
