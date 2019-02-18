@@ -25,7 +25,6 @@ bool ppu_latch_on;
 
 FILE *rom;
 uint8_t mapper_type;
-uint16_t mapper_registers[4];
 uint16_t rom_address;
 uint16_t vrom_address;
 
@@ -280,7 +279,7 @@ void lsr(uint8_t *value) {
 
 // ORA: Bitwise or
 void ora(uint8_t value) {
-    accumulator &= value;
+    accumulator |= value;
 
     if (accumulator & 0x80) se_(0x80); else cl_(0x80); // N
     if (accumulator == 0)   se_(0x02); else cl_(0x02); // Z
