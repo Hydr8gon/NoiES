@@ -634,17 +634,15 @@ void ppu() {
         if (scanline >= 1 && scanline <= 240) { // Draw visible lines
             uint8_t y = scanline - 1;
 
-            if (ppu_cycles >= 1 && ppu_cycles <= 256) { // Draw the background
+            if (ppu_cycles >= 1 && ppu_cycles <= 256 && memory[0x2001] & 0x08) { // Draw the background
                 uint8_t x = ppu_cycles - 1;
                 uint16_t table_offset = 0x2000 + (memory[0x2000] & 0x03) * 0x0400;
-                uint16_t pattern_offset = (memory[0x2000] & 0x10) ? 0x1000 : 0x0000;
+                uint16_t pattern_offset = (memory[0x2000] & 0x10) << 8;
+                uint16_t tile = pattern_offset + ppu_memory[table_offset + (y / 8) * 32 + x / 8] * 16;
+                uint8_t bits_low = ppu_memory[tile + y % 8] & (0x80 >> (x % 8)) ? 0x01 : 0x00;
+                bits_low |= ppu_memory[tile + y % 8 + 8] & (0x80 >> (x % 8)) ? 0x02 : 0x00;
 
-                // Get the lower 2 bits of the palette index
-                uint16_t tile = ppu_memory[table_offset + (y / 8) * 32 + x / 8] * 16;
-                uint8_t bits_low = ppu_memory[pattern_offset + tile + y % 8] & (0x80 >> (x % 8)) ? 0x01 : 0x00;
-                bits_low |= ppu_memory[pattern_offset + tile + y % 8 + 8] & (0x80 >> (x % 8)) ? 0x02 : 0x00;
-
-                // Get the upper 2 bits of the palette index
+                // Get the upper 2 bits of the palette index from the attribute table
                 uint8_t bits_high = ppu_memory[table_offset + 0x03C0 + (y / 32) * 8 + x / 32];
                 if ((x / 8) % 2 == 0 && (y / 8) % 2 == 0) // Top left
                     bits_high = (bits_high & 0x03) << 2;
@@ -659,22 +657,24 @@ void ppu() {
                 if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]])
                     framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
             }
-            else if (ppu_cycles >= 257 && ppu_cycles <= 320) { // Draw the sprites
+            else if (ppu_cycles >= 257 && ppu_cycles <= 320 && memory[0x2001] & 0x10) { // Draw the sprites
                 uint8_t *sprite = &spr_memory[(ppu_cycles - 257) * 4];
+                uint8_t height = (memory[0x2000] & 0x20) ? 16 : 8;
 
-                if (*sprite <= y && *sprite + 8 > y) {
+                if (*sprite <= y && *sprite + height > y) {
                     uint8_t x = *(sprite + 3);
-                    uint16_t pattern_offset = (memory[0x2000] & 0x08) ? 0x1000 : 0x0000;
-                    uint16_t tile = *(sprite + 1) * 16;
+                    uint8_t y_sprite = ((y - *sprite) / 8) * 16 + (y - *sprite) % 8;
+                    uint16_t pattern_offset = (height == 8) ? (memory[0x2000] & 0x08) << 1 : (*(sprite + 1) & 0x01) << 12;
+                    uint16_t tile = pattern_offset + *(sprite + 1) * 16;
                     uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
 
                     // Draw a sprite line on the next line
-                    for (int i = x; i < x + 8; i++) {
-                        // Get the lower 2 bits of the palette index
-                        uint8_t bits_low = ppu_memory[pattern_offset + tile + (y - *sprite)] & (0x80 >> (i - x)) ? 0x01 : 0x00;
-                        bits_low |= ppu_memory[pattern_offset + tile + (y - *sprite) + 8] & (0x80 >> (i - x)) ? 0x02 : 0x00;
+                    for (int i = 0; i < 8; i++) {
+                        uint8_t bits_low = ppu_memory[tile + y_sprite] & (0x80 >> i) ? 0x01 : 0x00;
+                        bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
 
-                        framebuffer[(y + 1) * 256 + i] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
+                        uint8_t offset = (*(sprite + 2) & 0x40) ? 8 - i : i;
+                        framebuffer[(y + 1) * 256 + x + offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
                     }
                 }
             }
