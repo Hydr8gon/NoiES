@@ -23,6 +23,8 @@ uint16_t scanline;
 uint8_t ppu_latch;
 bool ppu_latch_on;
 
+uint8_t input_shift;
+
 FILE *rom;
 uint8_t mapper_type;
 uint16_t rom_address;
@@ -30,6 +32,8 @@ uint16_t vrom_address;
 
 uint32_t framebuffer[256 * 240];
 std::chrono::steady_clock::time_point timer;
+
+const char keymap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd' };
 
 const uint32_t palette[] = {
     0x757575FF, 0x271B8FFF, 0x0000ABFF, 0x47009FFF,
@@ -231,8 +235,15 @@ void ld_(uint8_t *reg, uint8_t *value) {
     if (*reg & 0x80) se_(0x80); else cl_(0x80); // N
     if (*reg == 0)   se_(0x02); else cl_(0x02); // Z
 
-    // Handle PPU registers
+    // Handle I/O and PPU registers
     switch (address) {
+        case 0x4016: // JOYPAD1: Read button status 1 bit at a time
+            *reg = (memory[0x4016] & (1 << input_shift)) ? 1 : 0;
+            input_shift++;
+            if (input_shift == 8)
+                input_shift = 0;
+            break;
+
         case 0x2002: // PPUSTATUS: Clear V-blank bit and latch
             memory[0x2002] &= ~0x80;
             ppu_latch_on = false;
@@ -355,7 +366,7 @@ void st_(uint8_t reg, uint8_t *dst) {
                 fread(ppu_memory, 1, 0x2000, rom);
                 break;
         }
-    } else {
+    } else if (address != 0x4016) {
         memory[address] = reg;
     }
 
@@ -711,6 +722,20 @@ void loop() {
     glutPostRedisplay();
 }
 
+void key_down(unsigned char key, int x, int y) {
+    for (int i = 0; i < 8; i++) {
+        if (key == keymap[i])
+            memory[0x4016] |= 1 << i;
+    }
+}
+
+void key_up(unsigned char key, int x, int y) {
+    for (int i = 0; i < 8; i++) {
+        if (key == keymap[i])
+            memory[0x4016] &= ~(1 << i);
+    }
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Please specify a ROM to load.\n");
@@ -786,6 +811,8 @@ int main(int argc, char **argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
     glutDisplayFunc(loop);
+    glutKeyboardFunc(key_down);
+    glutKeyboardUpFunc(key_up);
     glutMainLoop();
 
     fclose(rom);
