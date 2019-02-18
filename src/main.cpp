@@ -182,9 +182,9 @@ void brk() {
 
 // CP_: Compare a register
 void cp_(uint8_t reg, uint8_t value) {
-    if ((reg - value) & 0x80)   se_(0x80); else cl_(0x80); // N
-    if (reg == value) se_(0x02); else cl_(0x02); // Z
-    if (reg >= value) se_(0x01); else cl_(0x01); // C
+    if ((reg - value) & 0x80) se_(0x80); else cl_(0x80); // N
+    if (reg == value)         se_(0x02); else cl_(0x02); // Z
+    if (reg >= value)         se_(0x01); else cl_(0x01); // C
 }
 
 // DE_: Decrement a value
@@ -253,7 +253,7 @@ void ld_(uint8_t *reg, uint8_t *value) {
             break;
 
         case 0x2004: // OAMDATA: Read from sprite memory
-            *reg = spr_memory[memory[address - 1]];
+            *reg = spr_memory[memory[0x2003]];
             break;
 
         case 0x2007: // PPUDATA: Read from PPU memory
@@ -263,7 +263,7 @@ void ld_(uint8_t *reg, uint8_t *value) {
             uint16_t address_mirror = ppu_address % 0x4000;
             if (address_mirror >= 0x3000 && address_mirror < 0x3F00)
                 address_mirror -= 0x1000;
-            else if (address_mirror >= 0x3F20 && address_mirror < 0x4000)
+            else if (address_mirror >= 0x3F20)
                 address_mirror = 0x3F00 + (address_mirror - 0x3F20) % 20;
 
             *reg = ppu_memory[address_mirror];
@@ -271,7 +271,7 @@ void ld_(uint8_t *reg, uint8_t *value) {
             // Increment the address
             ppu_address += (memory[0x2000] & 0x04) ? 32 : 1;
             ppu_latch = ppu_address >> 8;
-            memory[0x2002] = ppu_address;
+            memory[0x2006] = ppu_address;
 
             break;
     }
