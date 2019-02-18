@@ -27,8 +27,11 @@ uint8_t input_shift;
 
 FILE *rom;
 uint8_t mapper_type;
+uint8_t mapper_registers[2];
+uint8_t mapper_shift;
 uint16_t rom_address;
-uint16_t vrom_address;
+uint32_t rom_address_last;
+uint32_t vrom_address;
 
 uint32_t framebuffer[256 * 240];
 std::chrono::steady_clock::time_point timer;
@@ -356,13 +359,76 @@ void st_(uint8_t reg, uint8_t *dst) {
     if (address >= 0x8000) {
         // Handle mapper registers
         switch (mapper_type) {
-            case 2: // UNROM: Switch the first ROM bank only
+            case 1: // MMC1: Swap 16 KB or 32 KB ROM banks and 4 KB or 8 KB VROM banks, written to 1 byte at a time
+                if (reg & 0x80) {
+                    mapper_registers[0] = 0;
+                    mapper_shift = 0;
+                } else {
+                    mapper_registers[0] |= (reg & 0x01) << mapper_shift;
+                    mapper_shift++;
+                }
+
+                if (mapper_shift == 5) {
+                    if (address >= 0x8000 && address < 0xA000) { // Control
+                        mapper_registers[1] = mapper_registers[0];
+                    }
+                    else if (address >= 0xA000 && address < 0xC000) { // VROM bank 0
+                        if (mapper_registers[1] & 0x10) { // 4 KB
+                            fseek(rom, vrom_address + 0x1000 * mapper_registers[0], SEEK_SET);
+                            fread(ppu_memory, 1, 0x1000, rom);
+                        }
+                        else { // 8 KB
+                            fseek(rom, vrom_address + 0x1000 * (mapper_registers[0] & ~0x01), SEEK_SET);
+                            fread(ppu_memory, 1, 0x2000, rom);
+                        }
+                    }
+                    else if (address >= 0xC000 && address < 0xE000) { // VROM bank 1
+                        if (mapper_registers[1] & 0x10) { // 4 KB
+                            fseek(rom, vrom_address + 0x1000 * (mapper_registers[0] + 1), SEEK_SET);
+                            fread(&ppu_memory[0x1000], 1, 0x1000, rom);
+                        }
+                    }
+                    else { // ROM banks
+                        if (mapper_registers[1] & 0x04) { // ROM bank 1 is fixed
+                            if (mapper_registers[1] & 0x08) { // 16 KB
+                                fseek(rom, rom_address + 0x4000 * mapper_registers[0], SEEK_SET);
+                                fread(&memory[0x8000], 1, 0x4000, rom);
+                            }
+                            else { // 32 KB
+                                fseek(rom, rom_address + 0x4000 * (mapper_registers[0] & 0x0C), SEEK_SET);
+                                fread(&memory[0x8000], 1, 0x8000, rom);
+                            }
+
+                            fseek(rom, rom_address_last, SEEK_SET);
+                            fread(&memory[0xC000], 1, 0x4000, rom);
+                        }
+                        else { // ROM bank 0 is fixed
+                            if (mapper_registers[1] & 0x08) { // 16 KB
+                                fseek(rom, rom_address + 0x4000 * mapper_registers[0], SEEK_SET);
+                                fread(&memory[0xC000], 1, 0x4000, rom);
+                            }
+                            else { // 32 KB
+                                fseek(rom, rom_address + 0x4000 * (mapper_registers[0] & 0x0C), SEEK_SET);
+                                fread(&memory[0x8000], 1, 0x8000, rom);
+                            }
+
+                            fseek(rom, rom_address, SEEK_SET);
+                            fread(&memory[0x8000], 1, 0x4000, rom);
+                        }
+                    }
+
+                    mapper_registers[0] = 0;
+                    mapper_shift = 0;
+                }
+                break;
+
+            case 2: // UNROM: Swap the first ROM bank only
                 fseek(rom, rom_address + 0x4000 * reg, SEEK_SET);
                 fread(&memory[0x8000], 1, 0x4000, rom);
                 break;
 
-            case 3: // CNROM: Switch the VROM bank only
-                fseek(rom, vrom_address + 0x2000 * reg, SEEK_SET);
+            case 3: // CNROM: Swap the VROM bank only
+                fseek(rom, vrom_address + 0x2000 * (reg & 0x03), SEEK_SET);
                 fread(ppu_memory, 1, 0x2000, rom);
                 break;
         }
@@ -778,10 +844,13 @@ int main(int argc, char **argv) {
                 fread(&memory[0xC000], 1, 0x4000, rom);
             break;
 
+        case 1: // MMC1: Load the first and last banks
         case 2: // UNROM: Load the first and last banks
             fread(&memory[0x8000], 1, 0x4000, rom);
             fseek(rom, (header[4] - 2) * 0x4000, SEEK_CUR);
+            rom_address_last = ftell(rom);
             fread(&memory[0xC000], 1, 0x4000, rom);
+            mapper_registers[1] = 0x04;
             break;
 
         default:
