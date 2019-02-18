@@ -125,17 +125,13 @@ void pl_(uint8_t *reg) {
 
 // ADC: Add with carry
 void adc(uint8_t value) {
-    uint8_t accumulator_old = accumulator;
-    accumulator += value;
+    uint8_t accum_old = accumulator;
+    accumulator += value + (flags & 0x01);
 
-    if (accumulator & 0x80)            se_(0x80); else cl_(0x80); // N
-    if (accumulator == 0)              se_(0x02); else cl_(0x02); // Z
-    if (accumulator_old > accumulator) se_(0x01); else cl_(0x01); // C
-
-    if (value & 0x80 && accumulator_old & 0x80)
-        if (accumulator & 0x80) cl_(0x40); else se_(0x40); // V
-    else if (!(value & 0x80) && !(accumulator_old & 0x80))
-        if (accumulator & 0x80) se_(0x40); else cl_(0x40); // V
+    if (accumulator & 0x80)                                                     se_(0x80); else cl_(0x80); // N
+    if (accumulator == 0)                                                       se_(0x02); else cl_(0x02); // Z
+    if (value & 0x80 == accum_old & 0x80 && accumulator & 0x80 != value & 0x80) se_(0x40); else cl_(0x40); // V
+    if (accum_old > accumulator)                                                se_(0x01); else cl_(0x01); // C
 }
 
 // AND: Bitwise and
@@ -327,14 +323,13 @@ void rts() {
 
 // SBC: Subtract with carry
 void sbc(uint8_t value) {
-    uint8_t accumulator_old = accumulator;
-    accumulator -= value;
+    uint8_t accum_old = accumulator;
+    accumulator -= value + !(flags & 0x01);
 
-    if (accumulator & 0x80)            se_(0x80); else cl_(0x80); // N
-    if (accumulator == 0)              se_(0x02); else cl_(0x02); // Z
-    if (accumulator_old < accumulator) se_(0x01); else cl_(0x01); // C
-
-    cl_(0x40); // V
+    if (accumulator & 0x80)                                                     se_(0x80); else cl_(0x80); // N
+    if (accumulator == 0)                                                       se_(0x02); else cl_(0x02); // Z
+    if (value & 0x80 != accum_old & 0x80 && accumulator & 0x80 == value & 0x80) se_(0x40); else cl_(0x40); // V
+    if (accum_old < accumulator)                                                se_(0x01); else cl_(0x01); // C
 }
 
 // ST_: Store a register
