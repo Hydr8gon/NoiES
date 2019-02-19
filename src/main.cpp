@@ -20,6 +20,7 @@ bool interrupts[3];
 uint32_t ppu_cycles;
 uint32_t scanline_cycles;
 uint16_t scanline;
+uint8_t sprite_count;
 uint8_t ppu_latch;
 bool ppu_latch_on;
 
@@ -440,6 +441,7 @@ void st_(uint8_t reg, uint8_t *dst) {
     switch (address) {
         case 0x4014: // OAMDMA: DMA transfer to sprite memory
             memcpy(spr_memory, &memory[memory[0x4014] * 0x100], 0x100);
+            cycles += (cycles % 2) ? 514 : 513;
             break;
 
         case 0x2004: // OAMDATA: 1 byte transfer to sprite memory
@@ -702,7 +704,11 @@ void ppu() {
         target_ppu_cycles = (cycles - scanline_cycles) * 3;
 
     while (target_ppu_cycles > ppu_cycles) {
-        if (scanline >= 1 && scanline <= 240) { // Draw visible lines
+        if (scanline == 0) { // Pre-render
+            if (ppu_cycles == 1)
+                memory[0x2002] &= ~0x60;
+        }
+        else if (scanline >= 1 && scanline <= 240) { // Draw visible lines
             uint8_t y = scanline - 1;
 
             if (ppu_cycles >= 1 && ppu_cycles <= 256 && memory[0x2001] & 0x08) { // Draw the background
@@ -725,27 +731,39 @@ void ppu() {
                     bits_high = (bits_high & 0xC0) >> 4;
 
                 // Draw a pixel if it isn't covered
-                if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]])
-                    framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
+                if (x >= 8 || memory[0x2001] & 0x02) {
+                    if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]])
+                        framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
+                    else if (bits_low != 0 && spr_memory[0] + 1 == y && spr_memory[3] <= x && spr_memory[3] + 8 > x) // Sprite 0 hit
+                        memory[0x2002] |= 0x40;
+                }
             }
             else if (ppu_cycles >= 257 && ppu_cycles <= 320 && memory[0x2001] & 0x10) { // Draw the sprites
                 uint8_t *sprite = &spr_memory[(ppu_cycles - 257) * 4];
                 uint8_t height = (memory[0x2000] & 0x20) ? 16 : 8;
 
                 if (*sprite <= y && *sprite + height > y) {
-                    uint8_t x = *(sprite + 3);
-                    uint8_t y_sprite = ((y - *sprite) / 8) * 16 + (y - *sprite) % 8;
-                    uint16_t pattern_offset = (height == 8) ? (memory[0x2000] & 0x08) << 1 : (*(sprite + 1) & 0x01) << 12;
-                    uint16_t tile = pattern_offset + *(sprite + 1) * 16;
-                    uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
+                    if (sprite_count < 8) {
+                        uint8_t x = *(sprite + 3);
+                        uint8_t y_sprite = ((y - *sprite) / 8) * 16 + (y - *sprite) % 8;
+                        uint16_t pattern_offset = (height == 8) ? (memory[0x2000] & 0x08) << 1 : (*(sprite + 1) & 0x01) << 12;
+                        uint16_t tile = pattern_offset + *(sprite + 1) * 16;
+                        uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
 
-                    // Draw a sprite line on the next line
-                    for (int i = 0; i < 8; i++) {
-                        uint8_t bits_low = ppu_memory[tile + y_sprite] & (0x80 >> i) ? 0x01 : 0x00;
-                        bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
+                        // Draw a sprite line on the next line
+                        for (int i = 0; i < 8; i++) {
+                            uint8_t bits_low = ppu_memory[tile + y_sprite] & (0x80 >> i) ? 0x01 : 0x00;
+                            bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
 
-                        uint8_t offset = (*(sprite + 2) & 0x40) ? 8 - i : i;
-                        framebuffer[(y + 1) * 256 + x + offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
+                            uint16_t x_offset = x + ((*(sprite + 2) & 0x40) ? 8 - i : i);
+                            if (x_offset < 256 && (x_offset >= 8 || memory[0x2001] & 0x04))
+                                framebuffer[(y + 1) * 256 + x_offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
+                        }
+
+                        sprite_count++;
+                    }
+                    else { // Sprite overflow
+                        memory[0x2002] |= 0x20;
                     }
                 }
             }
@@ -757,6 +775,7 @@ void ppu() {
 
         ppu_cycles++;
         if (ppu_cycles == 341) {
+            sprite_count = 0;
             ppu_cycles = 0;
             target_ppu_cycles -= 341;
             scanline_cycles = cycles;
