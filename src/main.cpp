@@ -79,13 +79,19 @@ uint8_t *absolute() {
 }
 
 // Absolute X addressing: Add the X register to the absolute address
-uint8_t *absolute_x() {
-    return &memory[(memory[++program_counter] | (memory[++program_counter] << 8)) + register_x];
+uint8_t *absolute_x(bool page_cycle) {
+    uint16_t address = memory[++program_counter] | (memory[++program_counter] << 8);
+    if (page_cycle && address / 0x100 != (address + register_x) / 0x100) // Page crossed
+            cycles++;
+    return &memory[address + register_x];
 }
 
 // Absolute Y addressing: Add the Y register to the absolute address
-uint8_t *absolute_y() {
-    return &memory[(memory[++program_counter] | (memory[++program_counter] << 8)) + register_y];
+uint8_t *absolute_y(bool page_cycle) {
+    uint16_t address = memory[++program_counter] | (memory[++program_counter] << 8);
+    if (page_cycle && address / 0x100 != (address + register_y) / 0x100) // Page crossed
+            cycles++;
+    return &memory[address + register_y];
 }
 
 // Indirect addressing: Use the memory address stored at the absolute address
@@ -101,9 +107,12 @@ uint8_t *indirect_x() {
 }
 
 // Indirect Y addressing: Add the Y register to the memory address stored at the zero page address
-uint8_t *indirect_y() {
-    uint8_t *address = zero_page();
-    return &memory[(*address | (*(address + 1) << 8)) + register_y];
+uint8_t *indirect_y(bool page_cycle) {
+    uint8_t *address_1 = zero_page();
+    uint16_t address_2 = *address_1 | (*(address_1 + 1) << 8);
+    if (page_cycle && address_2 / 0x100 != (address_2 + register_y) / 0x100) // Page crossed
+            cycles++;
+    return &memory[address_2 + register_y];
 }
 
 // Get a value using immediate addressing
@@ -170,8 +179,12 @@ void bit(uint8_t value) {
 // B__: Branch on condition
 void b__(bool condition) {
     int8_t value = *immediate();
-    if (condition)
+    if (condition) {
         program_counter += value;
+        cycles++;
+        if ((program_counter + 1) / 0x100 != (program_counter - value) / 0x100) // Page crossed
+            cycles++;
+    }
 }
 
 // BRK: Break
@@ -492,29 +505,29 @@ void cpu() {
 
     // Decode opcode
     switch (memory[program_counter]) {
-        case 0x69: adc(*immediate());   cycles += 2; break; // ADC immediate
-        case 0x65: adc(*zero_page());   cycles += 3; break; // ADC zero page
-        case 0x75: adc(*zero_page_x()); cycles += 4; break; // ADC zero page X
-        case 0x6D: adc(*absolute());    cycles += 4; break; // ADC absolute
-        case 0x7D: adc(*absolute_x());  cycles += 4; break; // ADC absolute X
-        case 0x79: adc(*absolute_y());  cycles += 4; break; // ADC absolute Y
-        case 0x61: adc(*indirect_x());  cycles += 6; break; // ADC indirect X
-        case 0x71: adc(*indirect_y());  cycles += 5; break; // ADC indirect Y
+        case 0x69: adc(*immediate());      cycles += 2; break; // ADC immediate
+        case 0x65: adc(*zero_page());      cycles += 3; break; // ADC zero page
+        case 0x75: adc(*zero_page_x());    cycles += 4; break; // ADC zero page X
+        case 0x6D: adc(*absolute());       cycles += 4; break; // ADC absolute
+        case 0x7D: adc(*absolute_x(true)); cycles += 4; break; // ADC absolute X
+        case 0x79: adc(*absolute_y(true)); cycles += 4; break; // ADC absolute Y
+        case 0x61: adc(*indirect_x());     cycles += 6; break; // ADC indirect X
+        case 0x71: adc(*indirect_y(true)); cycles += 5; break; // ADC indirect Y
 
-        case 0x29: _and(*immediate());   cycles += 2; break; // AND immediate
-        case 0x25: _and(*zero_page());   cycles += 3; break; // AND zero page
-        case 0x35: _and(*zero_page_x()); cycles += 4; break; // AND zero page X
-        case 0x2D: _and(*absolute());    cycles += 4; break; // AND absolute
-        case 0x3D: _and(*absolute_x());  cycles += 4; break; // AND absolute X
-        case 0x39: _and(*absolute_y());  cycles += 4; break; // AND absolute Y
-        case 0x21: _and(*indirect_x());  cycles += 6; break; // AND indirect X
-        case 0x31: _and(*indirect_y());  cycles += 5; break; // AND indirect Y
+        case 0x29: _and(*immediate());      cycles += 2; break; // AND immediate
+        case 0x25: _and(*zero_page());      cycles += 3; break; // AND zero page
+        case 0x35: _and(*zero_page_x());    cycles += 4; break; // AND zero page X
+        case 0x2D: _and(*absolute());       cycles += 4; break; // AND absolute
+        case 0x3D: _and(*absolute_x(true)); cycles += 4; break; // AND absolute X
+        case 0x39: _and(*absolute_y(true)); cycles += 4; break; // AND absolute Y
+        case 0x21: _and(*indirect_x());     cycles += 6; break; // AND indirect X
+        case 0x31: _and(*indirect_y(true)); cycles += 5; break; // AND indirect Y
 
-        case 0x0A: asl(&accumulator);  cycles += 2; break; // ASL accumulator
-        case 0x06: asl(zero_page());   cycles += 5; break; // ASL zero page
-        case 0x16: asl(zero_page_x()); cycles += 6; break; // ASL zero page X
-        case 0x0E: asl(absolute());    cycles += 6; break; // ASL absolute
-        case 0x1E: asl(absolute_x());  cycles += 7; break; // ASL absolute X
+        case 0x0A: asl(&accumulator);       cycles += 2; break; // ASL accumulator
+        case 0x06: asl(zero_page());        cycles += 5; break; // ASL zero page
+        case 0x16: asl(zero_page_x());      cycles += 6; break; // ASL zero page X
+        case 0x0E: asl(absolute());         cycles += 6; break; // ASL absolute
+        case 0x1E: asl(absolute_x(false));  cycles += 7; break; // ASL absolute X
 
         case 0x24: bit(*zero_page()); cycles += 3; break; // BIT zero page
         case 0x2C: bit(*absolute());  cycles += 4; break; // BIT absolute
@@ -534,10 +547,10 @@ void cpu() {
         case 0xC5: cp_(accumulator, *zero_page());   cycles += 3; break; // CMP zero page
         case 0xD5: cp_(accumulator, *zero_page_x()); cycles += 4; break; // CMP zero page X
         case 0xCD: cp_(accumulator, *absolute());    cycles += 4; break; // CMP absolute
-        case 0xDD: cp_(accumulator, *absolute_x());  cycles += 4; break; // CMP absolute X
-        case 0xD9: cp_(accumulator, *absolute_y());  cycles += 4; break; // CMP absolute Y
+        case 0xDD: cp_(accumulator, *absolute_x(true));  cycles += 4; break; // CMP absolute X
+        case 0xD9: cp_(accumulator, *absolute_y(true));  cycles += 4; break; // CMP absolute Y
         case 0xC1: cp_(accumulator, *indirect_x());  cycles += 6; break; // CMP indirect X
-        case 0xD1: cp_(accumulator, *indirect_y());  cycles += 5; break; // CMP indirect Y
+        case 0xD1: cp_(accumulator, *indirect_y(true));  cycles += 5; break; // CMP indirect Y
 
         case 0xE0: cp_(register_x, *immediate()); cycles += 2; break; // CPX immediate
         case 0xE4: cp_(register_x, *zero_page()); cycles += 3; break; // CPX zero page
@@ -547,19 +560,19 @@ void cpu() {
         case 0xC4: cp_(register_y, *zero_page()); cycles += 3; break; // CPY zero page
         case 0xCC: cp_(register_y, *absolute());  cycles += 4; break; // CPY absolute
 
-        case 0xC6: de_(zero_page());   cycles += 5; break; // DEC zero page
-        case 0xD6: de_(zero_page_x()); cycles += 6; break; // DEC zero page X
-        case 0xCE: de_(absolute());    cycles += 6; break; // DEC absolute
-        case 0xDE: de_(absolute_x());  cycles += 7; break; // DEC absolute X
+        case 0xC6: de_(zero_page());       cycles += 5; break; // DEC zero page
+        case 0xD6: de_(zero_page_x());     cycles += 6; break; // DEC zero page X
+        case 0xCE: de_(absolute());        cycles += 6; break; // DEC absolute
+        case 0xDE: de_(absolute_x(false)); cycles += 7; break; // DEC absolute X
         
-        case 0x49: eor(*immediate());   cycles += 2; break; // EOR immediate
-        case 0x45: eor(*zero_page());   cycles += 3; break; // EOR zero page
-        case 0x55: eor(*zero_page_x()); cycles += 4; break; // EOR zero page X
-        case 0x4D: eor(*absolute());    cycles += 4; break; // EOR absolute
-        case 0x5D: eor(*absolute_x());  cycles += 4; break; // EOR absolute X
-        case 0x59: eor(*absolute_y());  cycles += 4; break; // EOR absolute Y
-        case 0x41: eor(*indirect_x());  cycles += 6; break; // EOR indirect X
-        case 0x51: eor(*indirect_y());  cycles += 5; break; // EOR indirect Y
+        case 0x49: eor(*immediate());      cycles += 2; break; // EOR immediate
+        case 0x45: eor(*zero_page());      cycles += 3; break; // EOR zero page
+        case 0x55: eor(*zero_page_x());    cycles += 4; break; // EOR zero page X
+        case 0x4D: eor(*absolute());       cycles += 4; break; // EOR absolute
+        case 0x5D: eor(*absolute_x(true)); cycles += 4; break; // EOR absolute X
+        case 0x59: eor(*absolute_y(true)); cycles += 4; break; // EOR absolute Y
+        case 0x41: eor(*indirect_x());     cycles += 6; break; // EOR indirect X
+        case 0x51: eor(*indirect_y(true)); cycles += 5; break; // EOR indirect Y
 
         case 0x18: cl_(0x01); cycles += 2; break; // CLC
         case 0x38: se_(0x01); cycles += 2; break; // SEC
@@ -569,53 +582,53 @@ void cpu() {
         case 0xD8: cl_(0x08); cycles += 2; break; // CLD
         case 0xF8: se_(0x08); cycles += 2; break; // SED
 
-        case 0xE6: in_(zero_page());   cycles += 5; break; // INC zero page
-        case 0xF6: in_(zero_page_x()); cycles += 6; break; // INC zero page X
-        case 0xEE: in_(absolute());    cycles += 6; break; // INC absolute
-        case 0xFE: in_(absolute_x());  cycles += 7; break; // INC absolute X
+        case 0xE6: in_(zero_page());       cycles += 5; break; // INC zero page
+        case 0xF6: in_(zero_page_x());     cycles += 6; break; // INC zero page X
+        case 0xEE: in_(absolute());        cycles += 6; break; // INC absolute
+        case 0xFE: in_(absolute_x(false)); cycles += 7; break; // INC absolute X
 
         case 0x4C: jmp(absolute()); cycles += 3; break; // JMP absolute
         case 0x6C: jmp(indirect()); cycles += 5; break; // JMP indirect
 
         case 0x20: jsr(absolute()); cycles += 6; break; // JSR absolute
 
-        case 0xA9: ld_(&accumulator, immediate());   cycles += 2; break; // LDA immediate
-        case 0xA5: ld_(&accumulator, zero_page());   cycles += 3; break; // LDA zero page
-        case 0xB5: ld_(&accumulator, zero_page_x()); cycles += 4; break; // LDA zero page X
-        case 0xAD: ld_(&accumulator, absolute());    cycles += 4; break; // LDA absolute
-        case 0xBD: ld_(&accumulator, absolute_x());  cycles += 4; break; // LDA absolute X
-        case 0xB9: ld_(&accumulator, absolute_y());  cycles += 4; break; // LDA absolute Y
-        case 0xA1: ld_(&accumulator, indirect_x());  cycles += 6; break; // LDA indirect X
-        case 0xB1: ld_(&accumulator, indirect_y());  cycles += 5; break; // LDA indirect Y
+        case 0xA9: ld_(&accumulator, immediate());      cycles += 2; break; // LDA immediate
+        case 0xA5: ld_(&accumulator, zero_page());      cycles += 3; break; // LDA zero page
+        case 0xB5: ld_(&accumulator, zero_page_x());    cycles += 4; break; // LDA zero page X
+        case 0xAD: ld_(&accumulator, absolute());       cycles += 4; break; // LDA absolute
+        case 0xBD: ld_(&accumulator, absolute_x(true)); cycles += 4; break; // LDA absolute X
+        case 0xB9: ld_(&accumulator, absolute_y(true)); cycles += 4; break; // LDA absolute Y
+        case 0xA1: ld_(&accumulator, indirect_x());     cycles += 6; break; // LDA indirect X
+        case 0xB1: ld_(&accumulator, indirect_y(true)); cycles += 5; break; // LDA indirect Y
 
-        case 0xA2: ld_(&register_x, immediate());   cycles += 2; break; // LDX immediate
-        case 0xA6: ld_(&register_x, zero_page());   cycles += 2; break; // LDX zero page
-        case 0xB6: ld_(&register_x, zero_page_y()); cycles += 2; break; // LDX zero page Y
-        case 0xAE: ld_(&register_x, absolute());    cycles += 3; break; // LDX absolute
-        case 0xBE: ld_(&register_x, absolute_y());  cycles += 3; break; // LDX absolute Y
+        case 0xA2: ld_(&register_x, immediate());      cycles += 2; break; // LDX immediate
+        case 0xA6: ld_(&register_x, zero_page());      cycles += 2; break; // LDX zero page
+        case 0xB6: ld_(&register_x, zero_page_y());    cycles += 2; break; // LDX zero page Y
+        case 0xAE: ld_(&register_x, absolute());       cycles += 3; break; // LDX absolute
+        case 0xBE: ld_(&register_x, absolute_y(true)); cycles += 3; break; // LDX absolute Y
 
-        case 0xA0: ld_(&register_y, immediate());   cycles += 2; break; // LDY immediate
-        case 0xA4: ld_(&register_y, zero_page());   cycles += 2; break; // LDY zero page
-        case 0xB4: ld_(&register_y, zero_page_x()); cycles += 2; break; // LDY zero page X
-        case 0xAC: ld_(&register_y, absolute());    cycles += 3; break; // LDY absolute
-        case 0xBC: ld_(&register_y, absolute_x());  cycles += 3; break; // LDY absolute X
+        case 0xA0: ld_(&register_y, immediate());      cycles += 2; break; // LDY immediate
+        case 0xA4: ld_(&register_y, zero_page());      cycles += 2; break; // LDY zero page
+        case 0xB4: ld_(&register_y, zero_page_x());    cycles += 2; break; // LDY zero page X
+        case 0xAC: ld_(&register_y, absolute());       cycles += 3; break; // LDY absolute
+        case 0xBC: ld_(&register_y, absolute_x(true)); cycles += 3; break; // LDY absolute X
 
-        case 0x4A: lsr(&accumulator);  cycles += 2; break; // LSR accumulator
-        case 0x46: lsr(zero_page());   cycles += 5; break; // LSR zero page
-        case 0x56: lsr(zero_page_x()); cycles += 6; break; // LSR zero page X
-        case 0x4E: lsr(absolute());    cycles += 6; break; // LSR absolute
-        case 0x5E: lsr(absolute_x());  cycles += 7; break; // LSR absolute X
+        case 0x4A: lsr(&accumulator);      cycles += 2; break; // LSR accumulator
+        case 0x46: lsr(zero_page());       cycles += 5; break; // LSR zero page
+        case 0x56: lsr(zero_page_x());     cycles += 6; break; // LSR zero page X
+        case 0x4E: lsr(absolute());        cycles += 6; break; // LSR absolute
+        case 0x5E: lsr(absolute_x(false)); cycles += 7; break; // LSR absolute X
 
         case 0xEA: cycles += 2; break; // NOP
 
-        case 0x09: ora(*immediate());   cycles += 2; break; // ORA immediate
-        case 0x05: ora(*zero_page());   cycles += 3; break; // ORA zero page
-        case 0x15: ora(*zero_page_x()); cycles += 4; break; // ORA zero page X
-        case 0x0D: ora(*absolute());    cycles += 4; break; // ORA absolute
-        case 0x1D: ora(*absolute_x());  cycles += 4; break; // ORA absolute X
-        case 0x19: ora(*absolute_y());  cycles += 4; break; // ORA absolute Y
-        case 0x01: ora(*indirect_x());  cycles += 6; break; // ORA indirect X
-        case 0x11: ora(*indirect_y());  cycles += 5; break; // ORA indirect Y
+        case 0x09: ora(*immediate());      cycles += 2; break; // ORA immediate
+        case 0x05: ora(*zero_page());      cycles += 3; break; // ORA zero page
+        case 0x15: ora(*zero_page_x());    cycles += 4; break; // ORA zero page X
+        case 0x0D: ora(*absolute());       cycles += 4; break; // ORA absolute
+        case 0x1D: ora(*absolute_x(true)); cycles += 4; break; // ORA absolute X
+        case 0x19: ora(*absolute_y(true)); cycles += 4; break; // ORA absolute Y
+        case 0x01: ora(*indirect_x());     cycles += 6; break; // ORA indirect X
+        case 0x11: ora(*indirect_y(true)); cycles += 5; break; // ORA indirect Y
 
         case 0xAA: t__(&accumulator, &register_x); cycles += 2; break; // TAX
         case 0x8A: t__(&register_x, &accumulator); cycles += 2; break; // TXA
@@ -626,38 +639,38 @@ void cpu() {
         case 0x88: de_(&register_y);               cycles += 2; break; // DEY
         case 0xC8: in_(&register_y);               cycles += 2; break; // INY
 
-        case 0x2A: rol(&accumulator);  cycles += 2; break; // ROL accumulator
-        case 0x26: rol(zero_page());   cycles += 5; break; // ROL zero page
-        case 0x36: rol(zero_page_x()); cycles += 6; break; // ROL zero page X
-        case 0x2E: rol(absolute());    cycles += 6; break; // ROL absolute
-        case 0x3E: rol(absolute_x());  cycles += 7; break; // ROL absolute X
+        case 0x2A: rol(&accumulator);      cycles += 2; break; // ROL accumulator
+        case 0x26: rol(zero_page());       cycles += 5; break; // ROL zero page
+        case 0x36: rol(zero_page_x());     cycles += 6; break; // ROL zero page X
+        case 0x2E: rol(absolute());        cycles += 6; break; // ROL absolute
+        case 0x3E: rol(absolute_x(false)); cycles += 7; break; // ROL absolute X
 
-        case 0x6A: ror(&accumulator);  cycles += 2; break; // ROR accumulator
-        case 0x66: ror(zero_page());   cycles += 5; break; // ROR zero page
-        case 0x76: ror(zero_page_x()); cycles += 6; break; // ROR zero page X
-        case 0x6E: ror(absolute());    cycles += 6; break; // ROR absolute
-        case 0x7E: ror(absolute_x());  cycles += 7; break; // ROR absolute X
+        case 0x6A: ror(&accumulator);      cycles += 2; break; // ROR accumulator
+        case 0x66: ror(zero_page());       cycles += 5; break; // ROR zero page
+        case 0x76: ror(zero_page_x());     cycles += 6; break; // ROR zero page X
+        case 0x6E: ror(absolute());        cycles += 6; break; // ROR absolute
+        case 0x7E: ror(absolute_x(false)); cycles += 7; break; // ROR absolute X
 
         case 0x40: rti(); cycles += 6; break; // RTI
 
         case 0x60: rts(); cycles += 6; break; // RTS
 
-        case 0xE9: sbc(*immediate());   cycles += 2; break; // SBC immediate
-        case 0xE5: sbc(*zero_page());   cycles += 3; break; // SBC zero page
-        case 0xF5: sbc(*zero_page_x()); cycles += 4; break; // SBC zero page X
-        case 0xED: sbc(*absolute());    cycles += 4; break; // SBC absolute
-        case 0xFD: sbc(*absolute_x());  cycles += 4; break; // SBC absolute X
-        case 0xF9: sbc(*absolute_y());  cycles += 4; break; // SBC absolute Y
-        case 0xE1: sbc(*indirect_x());  cycles += 6; break; // SBC indirect X
-        case 0xF1: sbc(*indirect_y());  cycles += 5; break; // SBC indirect Y
+        case 0xE9: sbc(*immediate());      cycles += 2; break; // SBC immediate
+        case 0xE5: sbc(*zero_page());      cycles += 3; break; // SBC zero page
+        case 0xF5: sbc(*zero_page_x());    cycles += 4; break; // SBC zero page X
+        case 0xED: sbc(*absolute());       cycles += 4; break; // SBC absolute
+        case 0xFD: sbc(*absolute_x(true)); cycles += 4; break; // SBC absolute X
+        case 0xF9: sbc(*absolute_y(true)); cycles += 4; break; // SBC absolute Y
+        case 0xE1: sbc(*indirect_x());     cycles += 6; break; // SBC indirect X
+        case 0xF1: sbc(*indirect_y(true)); cycles += 5; break; // SBC indirect Y
 
-        case 0x85: st_(accumulator, zero_page());   cycles += 3; break; // STA zero page
-        case 0x95: st_(accumulator, zero_page_x()); cycles += 4; break; // STA zero page X
-        case 0x8D: st_(accumulator, absolute());    cycles += 4; break; // STA absolute
-        case 0x9D: st_(accumulator, absolute_x());  cycles += 5; break; // STA absolute X
-        case 0x99: st_(accumulator, absolute_y());  cycles += 5; break; // STA absolute Y
-        case 0x81: st_(accumulator, indirect_x());  cycles += 6; break; // STA indirect X
-        case 0x91: st_(accumulator, indirect_y());  cycles += 6; break; // STA indirect Y
+        case 0x85: st_(accumulator, zero_page());       cycles += 3; break; // STA zero page
+        case 0x95: st_(accumulator, zero_page_x());     cycles += 4; break; // STA zero page X
+        case 0x8D: st_(accumulator, absolute());        cycles += 4; break; // STA absolute
+        case 0x9D: st_(accumulator, absolute_x(false)); cycles += 5; break; // STA absolute X
+        case 0x99: st_(accumulator, absolute_y(false)); cycles += 5; break; // STA absolute Y
+        case 0x81: st_(accumulator, indirect_x());      cycles += 6; break; // STA indirect X
+        case 0x91: st_(accumulator, indirect_y(false)); cycles += 6; break; // STA indirect Y
 
         case 0x9A: t__(&register_x, &stack_pointer); cycles += 2; break; // TXS
         case 0xBA: t__(&stack_pointer, &register_x); cycles += 2; break; // TSX
@@ -705,7 +718,7 @@ void ppu() {
 
     while (target_ppu_cycles > ppu_cycles) {
         if (scanline == 0) { // Pre-render
-            if (ppu_cycles == 1)
+            if (ppu_cycles == 1) // Clear sprite 0 hit and sprite overflow bits
                 memory[0x2002] &= ~0x60;
         }
         else if (scanline >= 1 && scanline <= 240) { // Draw visible lines
@@ -782,7 +795,7 @@ void ppu() {
             scanline++;
         }
 
-        if (scanline == 263) { // End of frame
+        if (scanline == 262) { // End of frame
             memory[0x2002] &= ~0x80;
             scanline = 0;
 
