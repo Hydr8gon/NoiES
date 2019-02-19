@@ -82,7 +82,7 @@ uint8_t *absolute() {
 uint8_t *absolute_x(bool page_cycle) {
     uint16_t address = memory[++program_counter] | (memory[++program_counter] << 8);
     if (page_cycle && address / 0x100 != (address + register_x) / 0x100) // Page crossed
-            cycles++;
+        cycles++;
     return &memory[address + register_x];
 }
 
@@ -90,7 +90,7 @@ uint8_t *absolute_x(bool page_cycle) {
 uint8_t *absolute_y(bool page_cycle) {
     uint16_t address = memory[++program_counter] | (memory[++program_counter] << 8);
     if (page_cycle && address / 0x100 != (address + register_y) / 0x100) // Page crossed
-            cycles++;
+        cycles++;
     return &memory[address + register_y];
 }
 
@@ -111,7 +111,7 @@ uint8_t *indirect_y(bool page_cycle) {
     uint8_t *address_1 = zero_page();
     uint16_t address_2 = *address_1 | (*(address_1 + 1) << 8);
     if (page_cycle && address_2 / 0x100 != (address_2 + register_y) / 0x100) // Page crossed
-            cycles++;
+        cycles++;
     return &memory[address_2 + register_y];
 }
 
@@ -137,7 +137,12 @@ void ph_(uint8_t reg) {
 
 // PL_: Pull a register from the stack
 void pl_(uint8_t *reg) {
-    *reg = memory[0x0100 + ++stack_pointer];
+    uint8_t value = memory[0x0100 + ++stack_pointer];
+
+    if (value & 0x80) se_(0x80); else cl_(0x80); // N
+    if (value == 0)   se_(0x02); else cl_(0x02); // Z
+
+    *reg = value;
 }
 
 // ADC: Add with carry
@@ -189,8 +194,10 @@ void b__(bool condition) {
 
 // BRK: Break
 void brk() {
-    if (!(flags & 0x04))
+    if (!(flags & 0x04)) {
+        se_(0x10);
         interrupts[2] = true;
+    }
     program_counter++;
 }
 
@@ -317,6 +324,11 @@ void t__(uint8_t *src, uint8_t *dst) {
     if (*dst == 0)   se_(0x02); else cl_(0x02); // Z
 }
 
+// TXS: Transfer the X register to the stack pointer
+void txs() {
+    stack_pointer = register_x;
+}
+
 // ROL: Rotate left
 void rol(uint8_t *value) {
     uint8_t value_old = *value;
@@ -337,16 +349,15 @@ void ror(uint8_t *value) {
     if (value_old & 0x01) se_(0x01); else cl_(0x01); // C
 }
 
-// RTI: Return from interrupt
-void rti() {
-    cl_(0x04);
-    pl_(&flags);
-    program_counter = memory[0x0100 + ++stack_pointer] | (memory[0x0100 + ++stack_pointer] << 8);
-}
-
 // RTS: Return from subroutine
 void rts() {
     program_counter = memory[0x0100 + ++stack_pointer] | (memory[0x0100 + ++stack_pointer] << 8);
+}
+
+// RTI: Return from interrupt
+void rti() {
+    pl_(&flags);
+    rts();
 }
 
 // SBC: Subtract with carry
@@ -497,6 +508,7 @@ void cpu() {
             ph_(program_counter);
             ph_(flags);
             se_(0x04);
+            cl_(0x10);
             program_counter = memory[0xFFFB + i * 2] << 8 | memory[0xFFFA + i * 2];
             cycles += 7;
             interrupts[i] = false;
@@ -672,7 +684,7 @@ void cpu() {
         case 0x81: st_(accumulator, indirect_x());      cycles += 6; break; // STA indirect X
         case 0x91: st_(accumulator, indirect_y(false)); cycles += 6; break; // STA indirect Y
 
-        case 0x9A: t__(&register_x, &stack_pointer); cycles += 2; break; // TXS
+        case 0x9A: txs();                            cycles += 2; break; // TXS
         case 0xBA: t__(&stack_pointer, &register_x); cycles += 2; break; // TSX
         case 0x48: ph_(accumulator);                 cycles += 3; break; // PHA
         case 0x68: pl_(&accumulator);                cycles += 4; break; // PLA
