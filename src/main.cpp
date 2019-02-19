@@ -385,7 +385,7 @@ void st_(uint8_t reg, uint8_t *dst) {
                     }
                     else if (address >= 0xC000 && address < 0xE000) { // VROM bank 1
                         if (mapper_registers[1] & 0x10) { // 4 KB
-                            fseek(rom, vrom_address + 0x1000 * (mapper_registers[0] + 1), SEEK_SET);
+                            fseek(rom, vrom_address + 0x1000 * mapper_registers[0], SEEK_SET);
                             fread(&ppu_memory[0x1000], 1, 0x1000, rom);
                         }
                     }
@@ -396,7 +396,7 @@ void st_(uint8_t reg, uint8_t *dst) {
                                 fread(&memory[0x8000], 1, 0x4000, rom);
                             }
                             else { // 32 KB
-                                fseek(rom, rom_address + 0x4000 * (mapper_registers[0] & 0x0C), SEEK_SET);
+                                fseek(rom, rom_address + 0x4000 * (mapper_registers[0] & 0x0E), SEEK_SET);
                                 fread(&memory[0x8000], 1, 0x8000, rom);
                             }
 
@@ -409,7 +409,7 @@ void st_(uint8_t reg, uint8_t *dst) {
                                 fread(&memory[0xC000], 1, 0x4000, rom);
                             }
                             else { // 32 KB
-                                fseek(rom, rom_address + 0x4000 * (mapper_registers[0] & 0x0C), SEEK_SET);
+                                fseek(rom, rom_address + 0x4000 * (mapper_registers[0] & 0x0E), SEEK_SET);
                                 fread(&memory[0x8000], 1, 0x8000, rom);
                             }
 
@@ -734,8 +734,8 @@ void ppu() {
                 if (x >= 8 || memory[0x2001] & 0x02) {
                     if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]])
                         framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
-                    else if (bits_low != 0 && spr_memory[0] + 1 == y && spr_memory[3] <= x && spr_memory[3] + 8 > x) // Sprite 0 hit
-                        memory[0x2002] |= 0x40;
+                    else if (bits_low != 0 && spr_memory[0] + 1 == y && spr_memory[3] <= x && spr_memory[3] + 8 > x)
+                        memory[0x2002] |= 0x40; // Sprite 0 hit
                 }
             }
             else if (ppu_cycles >= 257 && ppu_cycles <= 320 && memory[0x2001] & 0x10) { // Draw the sprites
