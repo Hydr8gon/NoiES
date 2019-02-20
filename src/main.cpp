@@ -20,6 +20,8 @@ bool interrupts[3];
 uint32_t ppu_cycles;
 uint32_t scanline_cycles;
 uint16_t scanline;
+uint8_t scroll_x;
+uint8_t scroll_y;
 uint8_t sprite_count;
 uint8_t mirror_type;
 uint8_t ppu_latch;
@@ -266,10 +268,10 @@ void adc(uint8_t value) {
     uint8_t accum_old = accumulator;
     accumulator += value + (flags & 0x01);
 
-    if (accumulator & 0x80)                                                     se_(0x80); else cl_(0x80); // N
-    if (accumulator == 0)                                                       se_(0x02); else cl_(0x02); // Z
-    if (value & 0x80 == accum_old & 0x80 && accumulator & 0x80 != value & 0x80) se_(0x40); else cl_(0x40); // V
-    if (accum_old > accumulator)                                                se_(0x01); else cl_(0x01); // C
+    if (accumulator & 0x80)                                               se_(0x80); else cl_(0x80); // N
+    if (accumulator == 0)                                                 se_(0x02); else cl_(0x02); // Z
+    if (value & 0x80 == accum_old & 0x80 && flags & 0x80 != value & 0x80) se_(0x40); else cl_(0x40); // V
+    if (accum_old > accumulator)                                          se_(0x01); else cl_(0x01); // C
 }
 
 // AND: Bitwise and
@@ -467,10 +469,10 @@ void sbc(uint8_t value) {
     uint8_t accum_old = accumulator;
     accumulator -= value + !(flags & 0x01);
 
-    if (accumulator & 0x80)                                                     se_(0x80); else cl_(0x80); // N
-    if (accumulator == 0)                                                       se_(0x02); else cl_(0x02); // Z
-    if (value & 0x80 != accum_old & 0x80 && accumulator & 0x80 == value & 0x80) se_(0x40); else cl_(0x40); // V
-    if (accum_old >= accumulator)                                               se_(0x01); else cl_(0x01); // C
+    if (accumulator & 0x80)                                               se_(0x80); else cl_(0x80); // N
+    if (accumulator == 0)                                                 se_(0x02); else cl_(0x02); // Z
+    if (value & 0x80 != accum_old & 0x80 && flags & 0x80 == value & 0x80) se_(0x40); else cl_(0x40); // V
+    if (accum_old >= accumulator)                                         se_(0x01); else cl_(0x01); // C
 }
 
 // ST_: Store a register
@@ -492,6 +494,17 @@ void st_(uint8_t reg, uint8_t *dst) {
         case 0x2004: // OAMDATA: 1 byte transfer to sprite memory
             spr_memory[memory[0x2003]] = reg;
             memory[0x2003]++;
+            break;
+
+        case 0x2005: // PPUSCROLL: Second write sets the scroll positions
+            ppu_latch_on = !ppu_latch_on;
+            if (ppu_latch_on) {
+                ppu_latch = reg;
+            }
+            else {
+                scroll_x = ppu_latch;
+                scroll_y = reg;
+            }
             break;
 
         case 0x2006: // PPUADDR: First write goes to the latch
@@ -751,30 +764,45 @@ void ppu() {
             uint8_t y = scanline - 1;
 
             if (ppu_cycles >= 1 && ppu_cycles <= 256 && memory[0x2001] & 0x08) { // Background drawing
-                uint8_t x = ppu_cycles - 1;
+                uint16_t x = ppu_cycles - 1;
+                uint16_t x_offset = x + scroll_x;
+                uint16_t y_offset = y + scroll_y;
                 uint16_t table_offset = 0x2000 + (memory[0x2000] & 0x03) * 0x0400;
                 uint16_t pattern_offset = (memory[0x2000] & 0x10) << 8;
-                uint16_t tile = pattern_offset + ppu_memory[table_offset + (y / 8) * 32 + x / 8] * 16;
-                uint8_t bits_low = ppu_memory[tile + y % 8] & (0x80 >> (x % 8)) ? 0x01 : 0x00;
-                bits_low |= ppu_memory[tile + y % 8 + 8] & (0x80 >> (x % 8)) ? 0x02 : 0x00;
+
+                // Change nametable based on scroll offset
+                if (x_offset >= 256)
+                    table_offset += 0x0400;
+                if (y_offset >= 240)
+                    table_offset += 0x0800;
+
+                x_offset %= 256;
+                y_offset %= 240;
+                table_offset = ppu_memory_mirror(table_offset);
+
+                uint16_t tile = pattern_offset + ppu_memory[table_offset + (y_offset / 8) * 32 + x_offset / 8] * 16;
+                uint8_t bits_low = ppu_memory[tile + y_offset % 8] & (0x80 >> (x_offset % 8)) ? 0x01 : 0x00;
+                bits_low |= ppu_memory[tile + y_offset % 8 + 8] & (0x80 >> (x_offset % 8)) ? 0x02 : 0x00;
 
                 // Get the upper 2 bits of the palette index from the attribute table
-                uint8_t bits_high = ppu_memory[table_offset + 0x03C0 + (y / 32) * 8 + x / 32];
-                if ((x / 8) % 2 == 0 && (y / 8) % 2 == 0) // Top left
+                uint8_t bits_high = ppu_memory[table_offset + 0x03C0 + (y_offset / 32) * 8 + x_offset / 32];
+                if ((x_offset / 8) % 2 == 0 && (y_offset / 8) % 2 == 0) // Top left
                     bits_high = (bits_high & 0x03) << 2;
-                else if ((x / 8) % 2 == 1 && (y / 8) % 2 == 0) // Top right
+                else if ((x_offset / 8) % 2 == 1 && (y_offset / 8) % 2 == 0) // Top right
                     bits_high = (bits_high & 0x0C) << 0;
-                else if ((x / 8) % 2 == 0 && (y / 8) % 2 == 1) // Bottom left
+                else if ((x_offset / 8) % 2 == 0 && (y_offset / 8) % 2 == 1) // Bottom left
                     bits_high = (bits_high & 0x30) >> 2;
                 else // Bottom right
                     bits_high = (bits_high & 0xC0) >> 4;
 
-                // Draw a pixel if it isn't covered
-                if (x >= 8 || memory[0x2001] & 0x02) {
-                    if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]])
+                // Draw a pixel
+                if ((x >= 8 || memory[0x2001] & 0x02) && bits_low != 0) {
+                    if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]] || framebuffer[y * 256 + x] & 0xFF == 0xFD)
                         framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
-                    else if (bits_low != 0 && spr_memory[0] + 1 == y && spr_memory[3] <= x && spr_memory[3] + 8 > x)
-                        memory[0x2002] |= 0x40; // Sprite 0 hit
+
+                    // Check if sprite 0 is hitting the pixel
+                    if (spr_memory[0] + 1 == y && spr_memory[3] <= x && spr_memory[3] + 8 > x)
+                        memory[0x2002] |= 0x40;
                 }
             }
             else if (ppu_cycles >= 257 && ppu_cycles <= 320 && memory[0x2001] & 0x10) { // Sprite drawing
@@ -789,14 +817,26 @@ void ppu() {
                         uint16_t tile = pattern_offset + *(sprite + 1) * 16;
                         uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
 
+                        if (*(sprite + 2) & 0x80)
+                            y_sprite = 7 - y_sprite;
+
                         // Draw a sprite line on the next line
                         for (int i = 0; i < 8; i++) {
+                            uint16_t x_offset = x + ((*(sprite + 2) & 0x40) ? 8 - i : i);
                             uint8_t bits_low = ppu_memory[tile + y_sprite] & (0x80 >> i) ? 0x01 : 0x00;
                             bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
 
-                            uint16_t x_offset = x + ((*(sprite + 2) & 0x40) ? 8 - i : i);
-                            if (x_offset < 256 && (x_offset >= 8 || memory[0x2001] & 0x04))
+                            if (x_offset < 256 && (x_offset >= 8 || memory[0x2001] & 0x04)) {
                                 framebuffer[(y + 1) * 256 + x_offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
+
+                                // Mark opaque pixels
+                                if (bits_low != 0) {
+                                    framebuffer[(y + 1) * 256 + x_offset]--;
+
+                                    if (*(sprite + 2) & 0x20) // Sprite is behind the background
+                                        framebuffer[(y + 1) * 256 + x_offset]--;
+                                }
+                            }
                         }
 
                         sprite_count++;
