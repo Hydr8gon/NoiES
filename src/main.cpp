@@ -786,11 +786,11 @@ void ppu() {
 
                 // Get the upper 2 bits of the palette index from the attribute table
                 uint8_t bits_high = ppu_memory[table_offset + 0x03C0 + (y_offset / 32) * 8 + x_offset / 32];
-                if ((x_offset / 8) % 2 == 0 && (y_offset / 8) % 2 == 0) // Top left
+                if ((x_offset / 16) % 2 == 0 && (y_offset / 16) % 2 == 0) // Top left
                     bits_high = (bits_high & 0x03) << 2;
-                else if ((x_offset / 8) % 2 == 1 && (y_offset / 8) % 2 == 0) // Top right
+                else if ((x_offset / 16) % 2 == 1 && (y_offset / 16) % 2 == 0) // Top right
                     bits_high = (bits_high & 0x0C) << 0;
-                else if ((x_offset / 8) % 2 == 0 && (y_offset / 8) % 2 == 1) // Bottom left
+                else if ((x_offset / 16) % 2 == 0 && (y_offset / 16) % 2 == 1) // Bottom left
                     bits_high = (bits_high & 0x30) >> 2;
                 else // Bottom right
                     bits_high = (bits_high & 0xC0) >> 4;
