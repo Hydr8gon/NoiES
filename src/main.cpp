@@ -797,7 +797,7 @@ void ppu() {
 
                 // Draw a pixel
                 if ((x >= 8 || memory[0x2001] & 0x02) && bits_low != 0) {
-                    if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]] || framebuffer[y * 256 + x] & 0xFF == 0xFD)
+                    if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]] || (framebuffer[y * 256 + x] & 0xFF) == 0xFD)
                         framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
 
                     // Check if sprite 0 is hitting the pixel
