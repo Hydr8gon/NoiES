@@ -242,6 +242,7 @@ void se_(uint8_t flag) {
     flags |= flag;
 }
 
+// PH_: Push a register to the stack
 void ph_(uint8_t reg) {
     memory[0x0100 + stack_pointer--] = reg;
 }
@@ -469,7 +470,7 @@ void sbc(uint8_t value) {
     if (accumulator & 0x80)                                                     se_(0x80); else cl_(0x80); // N
     if (accumulator == 0)                                                       se_(0x02); else cl_(0x02); // Z
     if (value & 0x80 != accum_old & 0x80 && accumulator & 0x80 == value & 0x80) se_(0x40); else cl_(0x40); // V
-    if (accum_old < accumulator)                                                se_(0x01); else cl_(0x01); // C
+    if (accum_old >= accumulator)                                               se_(0x01); else cl_(0x01); // C
 }
 
 // ST_: Store a register
@@ -493,7 +494,7 @@ void st_(uint8_t reg, uint8_t *dst) {
             memory[0x2003]++;
             break;
 
-        case 0x2006: // PPUADDR: First write goes to latch
+        case 0x2006: // PPUADDR: First write goes to the latch
             ppu_latch_on = !ppu_latch_on;
             if (ppu_latch_on)
                 ppu_latch = reg;
@@ -896,7 +897,7 @@ int main(int argc, char **argv) {
 
     // Load the ROM banks into memory
     switch (mapper_type) {
-        // Mirror a single bank or load both banks
+        // Mirror a single 16 KB bank or load both 16 KB banks
         case 0: // NROM
         case 3: // CNROM
             fread(&memory[0x8000], 1, 0x4000, rom);
@@ -906,7 +907,7 @@ int main(int argc, char **argv) {
                 fread(&memory[0xC000], 1, 0x4000, rom);
             break;
 
-        // Load the first and last banks
+        // Load the first and last 16 KB banks
         case 1: // MMC1
         case 2: // UNROM
             fread(&memory[0x8000], 1, 0x4000, rom);
