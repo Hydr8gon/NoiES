@@ -826,16 +826,13 @@ void ppu() {
                             uint8_t bits_low = ppu_memory[tile + y_sprite] & (0x80 >> i) ? 0x01 : 0x00;
                             bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
 
-                            if (x_offset < 256 && (x_offset >= 8 || memory[0x2001] & 0x04)) {
+                            if (x_offset < 256 && (x_offset >= 8 || memory[0x2001] & 0x04) && bits_low != 0) {
                                 framebuffer[(y + 1) * 256 + x_offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
 
                                 // Mark opaque pixels
-                                if (bits_low != 0) {
+                                framebuffer[(y + 1) * 256 + x_offset]--;
+                                if (*(sprite + 2) & 0x20) // Sprite is behind the background
                                     framebuffer[(y + 1) * 256 + x_offset]--;
-
-                                    if (*(sprite + 2) & 0x20) // Sprite is behind the background
-                                        framebuffer[(y + 1) * 256 + x_offset]--;
-                                }
                             }
                         }
 
