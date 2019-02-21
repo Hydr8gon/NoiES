@@ -831,7 +831,7 @@ void ppu() {
 
                         // Draw a sprite line on the next line
                         for (int i = 0; i < 8; i++) {
-                            uint16_t x_offset = x + ((*(sprite + 2) & 0x40) ? 8 - i : i);
+                            uint16_t x_offset = x + ((*(sprite + 2) & 0x40) ? 7 - i : i);
                             uint8_t bits_low = ppu_memory[tile + y_sprite] & (0x80 >> i) ? 0x01 : 0x00;
                             bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
 
