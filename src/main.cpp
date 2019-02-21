@@ -30,12 +30,13 @@ bool ppu_latch_on;
 uint8_t input_shift;
 
 FILE *rom;
+char *save;
+uint32_t rom_address;
+uint32_t rom_address_last;
+uint32_t vrom_address;
 uint8_t mapper_type;
 uint8_t mapper_registers[2];
 uint8_t mapper_shift;
-uint16_t rom_address;
-uint32_t rom_address_last;
-uint32_t vrom_address;
 
 uint32_t framebuffer[256 * 240];
 std::chrono::steady_clock::time_point timer;
@@ -899,6 +900,18 @@ void key_up(unsigned char key, int x, int y) {
     }
 }
 
+void close() {
+    // Write a savefile
+    if (save) {
+        FILE *savefile = fopen(save, "wb");
+        fwrite(&memory[0x6000], 1, 0x2000, savefile);
+        fclose(savefile);
+        delete[] save;
+    }
+
+    fclose(rom);
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Please specify a ROM to load.\n");
@@ -924,6 +937,19 @@ int main(int argc, char **argv) {
     if (strcmp(filetype, "NES") != 0 || header[3] != 0x1A) {
         printf("Invalid ROM format!\n");
         return 0;
+    }
+
+    // Load a savefile into memory
+    if (header[6] & 0x02) {
+        save = new char[strlen(argv[1])];
+        char *ext = (char*)"sav";
+        strcpy(save, argv[1]);
+        memcpy(&save[strlen(save) - 3], ext, 3);
+        FILE *savefile = fopen(save, "rb");
+        if (savefile) {
+            fread(&memory[0x6000], 1, 0x2000, savefile);
+            fclose(savefile);
+        }
     }
 
     // Load the ROM trainer into memory
@@ -980,11 +1006,11 @@ int main(int argc, char **argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
+    atexit(close);
     glutDisplayFunc(loop);
     glutKeyboardFunc(key_down);
     glutKeyboardUpFunc(key_up);
     glutMainLoop();
 
-    fclose(rom);
     return 0;
 }
