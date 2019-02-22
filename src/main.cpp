@@ -145,16 +145,16 @@ uint16_t ppu_memory_mirror(uint16_t address) {
     if (mirror_type != 2) { // 4-screen
         if (mirror_type == 0) { // Horizontal
             for (int i = 0; i <= 0x0800; i += 0x0800) {
-                if (address >= 0x2400 + i && address <= 0x2800 + i)
+                if (address >= 0x2400 + i && address < 0x2800 + i)
                     address -= 0x0400;
             }
         }
         else if (mirror_type == 1) { // Vertical
-            if (address >= 0x2800 && address <= 0x3000)
+            if (address >= 0x2800 && address < 0x3000)
                 address -= 0x0800;
         }
         else { // Single-screen
-            if (address >= 0x2400 && address <= 0x3000)
+            if (address >= 0x2400 && address < 0x3000)
                 address -= ((address - 0x2000) / 0x0400) * 0x0400;
         }
     }
