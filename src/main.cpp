@@ -312,10 +312,10 @@ void adc(uint8_t value) {
     uint8_t accum_old = accumulator;
     accumulator += value + (flags & 0x01);
 
-    if (accumulator & 0x80)                                               se_(0x80); else cl_(0x80); // N
-    if (accumulator == 0)                                                 se_(0x02); else cl_(0x02); // Z
-    if (value & 0x80 == accum_old & 0x80 && flags & 0x80 != value & 0x80) se_(0x40); else cl_(0x40); // V
-    if (accum_old > accumulator)                                          se_(0x01); else cl_(0x01); // C
+    if (accumulator & 0x80)                                                       se_(0x80); else cl_(0x80); // N
+    if (accumulator == 0)                                                         se_(0x02); else cl_(0x02); // Z
+    if ((value & 0x80) == (accum_old & 0x80) && (flags & 0x80) != (value & 0x80)) se_(0x40); else cl_(0x40); // V
+    if (accum_old > accumulator)                                                  se_(0x01); else cl_(0x01); // C
 }
 
 // AND: Bitwise and
@@ -338,9 +338,9 @@ void asl(uint8_t *value) {
 
 // BIT: Test bits
 void bit(uint8_t value) {
-    if (value & 0x80)             se_(0x80); else cl_(0x80); // N
-    if (value & 0x40)             se_(0x40); else cl_(0x40); // V
-    if (accumulator & value == 0) se_(0x02); else cl_(0x02); // Z
+    if (value & 0x80)               se_(0x80); else cl_(0x80); // N
+    if (value & 0x40)               se_(0x40); else cl_(0x40); // V
+    if ((accumulator & value) == 0) se_(0x02); else cl_(0x02); // Z
 }
 
 // B__: Branch on condition
@@ -513,10 +513,10 @@ void sbc(uint8_t value) {
     uint8_t accum_old = accumulator;
     accumulator -= value + !(flags & 0x01);
 
-    if (accumulator & 0x80)                                               se_(0x80); else cl_(0x80); // N
-    if (accumulator == 0)                                                 se_(0x02); else cl_(0x02); // Z
-    if (value & 0x80 != accum_old & 0x80 && flags & 0x80 == value & 0x80) se_(0x40); else cl_(0x40); // V
-    if (accum_old >= accumulator)                                         se_(0x01); else cl_(0x01); // C
+    if (accumulator & 0x80)                                                       se_(0x80); else cl_(0x80); // N
+    if (accumulator == 0)                                                         se_(0x02); else cl_(0x02); // Z
+    if ((value & 0x80) != (accum_old & 0x80) && (flags & 0x80) == (value & 0x80)) se_(0x40); else cl_(0x40); // V
+    if (accum_old >= accumulator)                                                 se_(0x01); else cl_(0x01); // C
 }
 
 // ST_: Store a register
