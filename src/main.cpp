@@ -240,6 +240,41 @@ void mapper_write(uint16_t address, uint8_t value) {
             fseek(rom, vrom_address + 0x2000 * (value & 0x03), SEEK_SET);
             fread(ppu_memory, 1, 0x2000, rom);
             break;
+
+        case 4: // MMC3: Swap 8 KB ROM banks and 1 KB or 2 KB VROM banks
+            if (address >= 0x8000 && address < 0xA000) {
+                if (address % 2 == 0) { // Bank select
+                    mapper_registers[0] = value;
+                    fseek(rom, rom_address_last, SEEK_SET);
+                    fread(&memory[(value & 0x40) ? 0x8000 : 0xC000], 1, 0x2000, rom);
+                }
+                else { // Bank data
+                    uint8_t bank = mapper_registers[0] & 0x07;
+                    if (bank < 2) { // 2 KB VROM banks
+                        fseek(rom, vrom_address + 0x0400 * (value & ~0x01), SEEK_SET);
+                        fread(&ppu_memory[(mapper_registers[0] & 0x80) << 8] + 0x0800 * bank, 1, 0x0800, rom);
+                    }
+                    else if (bank >= 2 && bank < 6) { // 1 KB VROM banks
+                        fseek(rom, vrom_address + 0x0400 * value, SEEK_SET);
+                        fread(&ppu_memory[0x1000 + 0x0400 * (bank - 2) - ((mapper_registers[0] & 0x80) << 8)], 1, 0x0400, rom);
+                    }
+                    else if (bank == 6) { // Swappable/fixed 8 KB ROM bank
+                        fseek(rom, rom_address + 0x2000 * value, SEEK_SET);
+                        fread(&memory[(mapper_registers[0] & 0x40) ? 0xC000 : 0x8000], 1, 0x2000, rom);
+                    }
+                    else { // Swappable 8 KB ROM bank
+                        fseek(rom, rom_address + 0x2000 * value, SEEK_SET);
+                        fread(&memory[0xA000], 1, 0x2000, rom);
+                    }
+                }
+            }
+            else if (address >= 0xA000 && address < 0xC000) {
+                if (address % 2 == 0) { // Mirroring
+                    if (mirror_type != 2)
+                        mirror_type = !(value);
+                }
+            }
+            break;
     }
 }
 
@@ -981,6 +1016,7 @@ int main(int argc, char **argv) {
         // Load the first and last 16 KB banks
         case 1: // MMC1
         case 2: // UNROM
+        case 4: // MMC3
             fread(&memory[0x8000], 1, 0x4000, rom);
             fseek(rom, (header[4] - 2) * 0x4000, SEEK_CUR);
             rom_address_last = ftell(rom);
