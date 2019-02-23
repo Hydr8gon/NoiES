@@ -100,8 +100,9 @@ uint8_t *absolute_y(bool page_cycle) {
 
 // Indirect addressing: Use the memory address stored at the absolute address
 uint8_t *indirect() {
-    uint8_t *address = absolute();
-    return &memory[*address | (*(address + 1) << 8)];
+    uint16_t address = memory[++program_counter] | (memory[++program_counter] << 8);
+    uint16_t address_2 = (((address + 1) & 0x00FF) == 0x00) ? address + 1 - 0x100 : address + 1;
+    return &memory[memory[address] | (memory[address_2] << 8)];
 }
 
 // Indirect X addressing: Use the memory address stored at the zero page X address 
@@ -513,6 +514,7 @@ void rts() {
 void rti() {
     plp();
     rts();
+    program_counter--;
 }
 
 // SBC: Subtract with carry
@@ -581,7 +583,7 @@ void cpu() {
     // Handle interrupts
     for (int i = 0; i < 3; i++) {
         if (interrupts[i]) {
-            ph_(--program_counter >> 8);
+            ph_(program_counter >> 8);
             ph_(program_counter);
             ph_(flags);
             cl_(0x10);
