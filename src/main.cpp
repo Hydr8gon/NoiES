@@ -106,17 +106,19 @@ uint8_t *indirect() {
 
 // Indirect X addressing: Use the memory address stored at the zero page X address 
 uint8_t *indirect_x() {
-    uint8_t *address = zero_page_x();
-    return &memory[*address | (*(address + 1) << 8)];
+    uint8_t address_lower = memory[(memory[++program_counter] + register_x) % 0x0100];
+    uint8_t address_upper = memory[(memory[program_counter] + register_x + 1) % 0x0100];
+    return &memory[address_lower | (address_upper << 8)];
 }
 
 // Indirect Y addressing: Add the Y register to the memory address stored at the zero page address
 uint8_t *indirect_y(bool page_cycle) {
-    uint8_t *address_1 = zero_page();
-    uint16_t address_2 = *address_1 | (*(address_1 + 1) << 8);
-    if (page_cycle && address_2 / 0x100 != (address_2 + register_y) / 0x100) // Page cross
+    uint8_t address_lower = memory[memory[++program_counter]];
+    uint8_t address_upper = memory[(memory[program_counter] + 1) % 0x100];
+    uint16_t address = address_lower | (address_upper << 8);
+    if (page_cycle && address / 0x100 != (address + register_y) / 0x100) // Page cross
         cycles++;
-    return &memory[address_2 + register_y];
+    return &memory[address + register_y];
 }
 
 // Get a value using immediate addressing
@@ -288,23 +290,29 @@ void se_(uint8_t flag) {
     flags |= flag;
 }
 
-// PH_: Push a register to the stack
-void ph_(uint8_t reg) {
-    memory[0x0100 + stack_pointer--] = reg;
+// PH_: Push a value to the stack
+void ph_(uint8_t value) {
+    memory[0x0100 + stack_pointer--] = value;
+}
+
+// PHP: Push the flags to the stack
+void php() {
+    ph_(flags | 0x10);
 }
 
 // PLA: Pull the accumulator from the stack
 void pla() {
-    uint8_t value = memory[0x0100 + ++stack_pointer];
-    accumulator = value;
+    accumulator = memory[0x0100 + ++stack_pointer];
 
-    if (value & 0x80) se_(0x80); else cl_(0x80); // N
-    if (value == 0)   se_(0x02); else cl_(0x02); // Z
+    if (accumulator & 0x80) se_(0x80); else cl_(0x80); // N
+    if (accumulator == 0)   se_(0x02); else cl_(0x02); // Z
 }
 
 // PLP: Pull the flags from the stack
 void plp() {
     flags = memory[0x0100 + ++stack_pointer];
+    se_(0x20);
+    cl_(0x10);
 }
 
 // ADC: Add with carry
@@ -504,7 +512,6 @@ void rts() {
 // RTI: Return from interrupt
 void rti() {
     plp();
-    cl_(0x10);
     rts();
 }
 
@@ -577,8 +584,8 @@ void cpu() {
             ph_(--program_counter >> 8);
             ph_(program_counter);
             ph_(flags);
-            se_(0x04);
             cl_(0x10);
+            se_(0x04);
             program_counter = memory[0xFFFB + i * 2] << 8 | memory[0xFFFA + i * 2];
             cycles += 7;
             interrupts[i] = false;
@@ -758,7 +765,7 @@ void cpu() {
         case 0xBA: t__(&stack_pointer, &register_x); cycles += 2; break; // TSX
         case 0x48: ph_(accumulator);                 cycles += 3; break; // PHA
         case 0x68: pla();                            cycles += 4; break; // PLA
-        case 0x08: ph_(flags);                       cycles += 3; break; // PHP
+        case 0x08: php();                            cycles += 3; break; // PHP
         case 0x28: plp();                            cycles += 4; break; // PLP
 
         case 0x86: st_(register_x, zero_page());   cycles += 3; break; // STX zero page
@@ -771,7 +778,7 @@ void cpu() {
 
         default:
             printf("Unknown opcode: 0x%X\n", memory[program_counter]);
-            exit(1);
+            break;
     }
 
     program_counter++;
