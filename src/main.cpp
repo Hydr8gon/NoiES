@@ -839,14 +839,16 @@ void ppu() {
                 else // Bottom right
                     bits_high = (bits_high & 0xC0) >> 4;
 
-                // Draw a pixel
                 if ((x >= 8 || memory[0x2001] & 0x02) && bits_low != 0) {
-                    if (framebuffer[y * 256 + x] == palette[ppu_memory[0x3F00]] || (framebuffer[y * 256 + x] & 0xFF) == 0xFD)
-                        framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
+                    uint8_t type = framebuffer[y * 256 + x] & 0xFF;
 
-                    // Check if sprite 0 is hitting the pixel
-                    if (spr_memory[0] + 1 == y && spr_memory[3] <= x && spr_memory[3] + 8 > x)
+                    // Check for a sprite 0 hit
+                    if (spr_memory[0] <= y + 1 && spr_memory[0] + 8 > y && spr_memory[3] <= x && spr_memory[3] + 7 > x && type != 0xFF)
                         memory[0x2002] |= 0x40;
+
+                    // Draw a pixel
+                    if (type != 0xFE)
+                        framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
                 }
             }
             else if (ppu_cycles >= 257 && ppu_cycles <= 320 && memory[0x2001] & 0x10) { // Sprite drawing
