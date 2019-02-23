@@ -614,25 +614,25 @@ void cpu() {
         case 0x24: bit(*zero_page()); cycles += 3; break; // BIT zero page
         case 0x2C: bit(*absolute());  cycles += 4; break; // BIT absolute
 
-        case 0x10: b__(!(flags & 0x80)); cycles += !(flags & 0x80) ? 3 : 2; break; // BPL
-        case 0x30: b__( (flags & 0x80)); cycles +=  (flags & 0x80) ? 3 : 2; break; // BMI
-        case 0x50: b__(!(flags & 0x40)); cycles += !(flags & 0x40) ? 3 : 2; break; // BVC
-        case 0x70: b__( (flags & 0x40)); cycles +=  (flags & 0x40) ? 3 : 2; break; // BVS
-        case 0x90: b__(!(flags & 0x01)); cycles += !(flags & 0x01) ? 3 : 2; break; // BCC
-        case 0xB0: b__( (flags & 0x01)); cycles +=  (flags & 0x01) ? 3 : 2; break; // BCS
-        case 0xD0: b__(!(flags & 0x02)); cycles += !(flags & 0x02) ? 3 : 2; break; // BNE
-        case 0xF0: b__( (flags & 0x02)); cycles +=  (flags & 0x02) ? 3 : 2; break; // BEQ
+        case 0x10: b__(!(flags & 0x80)); cycles += 2; break; // BPL
+        case 0x30: b__( (flags & 0x80)); cycles += 2; break; // BMI
+        case 0x50: b__(!(flags & 0x40)); cycles += 2; break; // BVC
+        case 0x70: b__( (flags & 0x40)); cycles += 2; break; // BVS
+        case 0x90: b__(!(flags & 0x01)); cycles += 2; break; // BCC
+        case 0xB0: b__( (flags & 0x01)); cycles += 2; break; // BCS
+        case 0xD0: b__(!(flags & 0x02)); cycles += 2; break; // BNE
+        case 0xF0: b__( (flags & 0x02)); cycles += 2; break; // BEQ
 
         case 0x00: brk(); cycles += 7; break; // BRK
 
-        case 0xC9: cp_(accumulator, *immediate());   cycles += 2; break; // CMP immediate
-        case 0xC5: cp_(accumulator, *zero_page());   cycles += 3; break; // CMP zero page
-        case 0xD5: cp_(accumulator, *zero_page_x()); cycles += 4; break; // CMP zero page X
-        case 0xCD: cp_(accumulator, *absolute());    cycles += 4; break; // CMP absolute
-        case 0xDD: cp_(accumulator, *absolute_x(true));  cycles += 4; break; // CMP absolute X
-        case 0xD9: cp_(accumulator, *absolute_y(true));  cycles += 4; break; // CMP absolute Y
-        case 0xC1: cp_(accumulator, *indirect_x());  cycles += 6; break; // CMP indirect X
-        case 0xD1: cp_(accumulator, *indirect_y(true));  cycles += 5; break; // CMP indirect Y
+        case 0xC9: cp_(accumulator, *immediate());      cycles += 2; break; // CMP immediate
+        case 0xC5: cp_(accumulator, *zero_page());      cycles += 3; break; // CMP zero page
+        case 0xD5: cp_(accumulator, *zero_page_x());    cycles += 4; break; // CMP zero page X
+        case 0xCD: cp_(accumulator, *absolute());       cycles += 4; break; // CMP absolute
+        case 0xDD: cp_(accumulator, *absolute_x(true)); cycles += 4; break; // CMP absolute X
+        case 0xD9: cp_(accumulator, *absolute_y(true)); cycles += 4; break; // CMP absolute Y
+        case 0xC1: cp_(accumulator, *indirect_x());     cycles += 6; break; // CMP indirect X
+        case 0xD1: cp_(accumulator, *indirect_y(true)); cycles += 5; break; // CMP indirect Y
 
         case 0xE0: cp_(register_x, *immediate()); cycles += 2; break; // CPX immediate
         case 0xE4: cp_(register_x, *zero_page()); cycles += 3; break; // CPX zero page
