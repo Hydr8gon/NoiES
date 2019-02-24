@@ -1,6 +1,7 @@
 #include <chrono>
 #include <stdio.h>
 #include <string.h>
+#include <thread>
 #include <unistd.h>
 #include "GL/glut.h"
 
@@ -39,6 +40,7 @@ uint8_t mapper_registers[2];
 uint8_t mapper_shift;
 
 uint32_t framebuffer[256 * 240];
+uint32_t display[256 * 240];
 std::chrono::steady_clock::time_point timer;
 
 const char keymap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd' };
@@ -789,17 +791,6 @@ void cpu() {
         cycles -= 1786840;
 }
 
-void draw() {
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, framebuffer);
-    glBegin(GL_QUADS);
-    glTexCoord2i(1, 1); glVertex2f( 1, -1);
-    glTexCoord2i(0, 1); glVertex2f(-1, -1);
-    glTexCoord2i(0, 0); glVertex2f(-1,  1);
-    glTexCoord2i(1, 0); glVertex2f( 1,  1);
-    glEnd();
-    glFlush();
-}
-
 void ppu() {
     // Determine how many PPU cycles to run based on how many CPU cycles ran
     uint32_t target_ppu_cycles;
@@ -920,7 +911,8 @@ void ppu() {
             memory[0x2002] &= ~0x80;
             scanline = 0;
 
-            draw();
+            // Copy the finished frame to the display
+            memcpy(display, framebuffer, sizeof(display));
 
             // Clear the framebuffer
             for (int i = 0; i < 256 * 240; i++)
@@ -935,48 +927,18 @@ void ppu() {
     }
 }
 
-void loop() {
-    cpu();
-    ppu();
-    glutPostRedisplay();
-}
-
-void key_down(unsigned char key, int x, int y) {
-    for (int i = 0; i < 8; i++) {
-        if (key == keymap[i])
-            memory[0x4016] |= 1 << i;
+void run() {
+    while (true) {
+        cpu();
+        ppu();
     }
 }
 
-void key_up(unsigned char key, int x, int y) {
-    for (int i = 0; i < 8; i++) {
-        if (key == keymap[i])
-            memory[0x4016] &= ~(1 << i);
-    }
-}
-
-void close() {
-    // Write a savefile
-    if (save) {
-        FILE *savefile = fopen(save, "wb");
-        fwrite(&memory[0x6000], 1, 0x2000, savefile);
-        fclose(savefile);
-        delete[] save;
-    }
-
-    fclose(rom);
-}
-
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        printf("Please specify a ROM to load.\n");
-        return 0;
-    }
-
-    rom = fopen(argv[1], "rb");
+bool start(char *filename) {
+    rom = fopen(filename, "rb");
     if (!rom) {
         printf("Failed to open ROM!\n");
-        return 0;
+        return false;
     }
 
     // Read the ROM header
@@ -991,14 +953,14 @@ int main(int argc, char **argv) {
     filetype[3] = '\0';
     if (strcmp(filetype, "NES") != 0 || header[3] != 0x1A) {
         printf("Invalid ROM format!\n");
-        return 0;
+        return false;
     }
 
     // Load a savefile into memory
     if (header[6] & 0x02) {
-        save = new char[strlen(argv[1])];
+        save = new char[strlen(filename)];
         char *ext = (char*)"sav";
-        strcpy(save, argv[1]);
+        strcpy(save, filename);
         memcpy(&save[strlen(save) - 3], ext, 3);
         FILE *savefile = fopen(save, "rb");
         if (savefile) {
@@ -1039,7 +1001,7 @@ int main(int argc, char **argv) {
         default:
             printf("Unknown mapper type: %d\n", mapper_type);
             fclose(rom);
-            return 1;
+            return false;
     }
 
     // Load the first 8 KB of VROM into PPU memory
@@ -1050,6 +1012,56 @@ int main(int argc, char **argv) {
 
     // Reset the program counter
     interrupts[1] = true;
+
+    return true;
+}
+
+void stop() {
+    // Write a savefile
+    if (save) {
+        FILE *savefile = fopen(save, "wb");
+        fwrite(&memory[0x6000], 1, 0x2000, savefile);
+        fclose(savefile);
+        delete[] save;
+    }
+
+    fclose(rom);
+}
+
+void draw() {
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, display);
+    glBegin(GL_QUADS);
+    glTexCoord2i(1, 1); glVertex2f( 1, -1);
+    glTexCoord2i(0, 1); glVertex2f(-1, -1);
+    glTexCoord2i(0, 0); glVertex2f(-1,  1);
+    glTexCoord2i(1, 0); glVertex2f( 1,  1);
+    glEnd();
+    glFlush();
+    glutPostRedisplay();
+}
+
+void key_down(unsigned char key, int x, int y) {
+    for (int i = 0; i < 8; i++) {
+        if (key == keymap[i])
+            memory[0x4016] |= 1 << i;
+    }
+}
+
+void key_up(unsigned char key, int x, int y) {
+    for (int i = 0; i < 8; i++) {
+        if (key == keymap[i])
+            memory[0x4016] &= ~(1 << i);
+    }
+}
+
+int main(int argc, char **argv) {
+    if (argc < 2) {
+        printf("Please specify a ROM to load.\n");
+        return 1;
+    }
+
+    if (!start(argv[1]))
+        return 1;
 
     glutInit(&argc, argv);
     glutInitWindowSize(256, 240);
@@ -1062,10 +1074,12 @@ int main(int argc, char **argv) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    atexit(close);
-    glutDisplayFunc(loop);
+    atexit(stop);
+    glutDisplayFunc(draw);
     glutKeyboardFunc(key_down);
     glutKeyboardUpFunc(key_up);
+
+    std::thread core(run);
     glutMainLoop();
 
     return 0;
