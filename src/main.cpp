@@ -25,6 +25,7 @@ uint8_t scroll_x;
 uint8_t scroll_y;
 uint8_t sprite_count;
 uint8_t mirror_type;
+uint8_t ppu_buffer;
 uint8_t ppu_latch;
 bool ppu_latch_on;
 
@@ -451,7 +452,14 @@ void ld_(uint8_t *reg, uint8_t *value) {
 
         case 0x2007: // PPUDATA: Read from PPU memory
             uint16_t ppu_address = (ppu_latch << 8) | memory[0x2006];
-            *reg = ppu_memory[ppu_memory_mirror(ppu_address)];
+
+            // Buffer non-palette reads
+            if (ppu_address < 0x3F00)
+                *reg = ppu_buffer;
+            else
+                *reg = ppu_memory[ppu_memory_mirror(ppu_address)];
+
+            ppu_buffer = ppu_memory[ppu_memory_mirror(ppu_address)];
 
             // Increment the address
             ppu_address += (memory[0x2000] & 0x04) ? 32 : 1;
@@ -576,6 +584,7 @@ void st_(uint8_t reg, uint8_t *dst) {
 
         case 0x2007: // PPUDATA: 1 byte transfer to PPU memory
             uint16_t ppu_address = (ppu_latch << 8) | memory[0x2006];
+
             ppu_memory[ppu_memory_mirror(ppu_address)] = reg;
 
             // Increment the address
