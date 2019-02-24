@@ -270,6 +270,7 @@ void mapper_write(uint16_t address, uint8_t value) {
                         fread(&memory[0xA000], 1, 0x2000, rom);
                     }
                 }
+                // TODO: IRQs
             }
             else if (address >= 0xA000 && address < 0xC000) {
                 if (address % 2 == 0) { // Mirroring
@@ -426,7 +427,7 @@ void ld_(uint8_t *reg, uint8_t *value) {
     // Handle I/O and PPU registers
     switch (address) {
         case 0x4016: // JOYPAD1: Read button status 1 bit at a time
-            *reg = (memory[0x4016] & (1 << input_shift)) ? 1 : 0;
+            *reg = (memory[0x4016] & (1 << input_shift)) ? 0x41 : 0x40;
             input_shift++;
             if (input_shift == 8)
                 input_shift = 0;
@@ -852,7 +853,7 @@ void ppu() {
                     uint8_t type = framebuffer[y * 256 + x] & 0xFF;
 
                     // Check for a sprite 0 hit
-                    if (spr_memory[0] <= y + 1 && spr_memory[0] + 8 > y && spr_memory[3] <= x && spr_memory[3] + 7 > x && type != 0xFF)
+                    if (x < 255 && spr_memory[0] <= y + 1 && spr_memory[0] + 9 > y && spr_memory[3] <= x && spr_memory[3] + 8 > x && type != 0xFF)
                         memory[0x2002] |= 0x40;
 
                     // Draw a pixel
@@ -907,15 +908,15 @@ void ppu() {
 
         ppu_cycles++;
 
-        if (ppu_cycles == 341) { // End of a scanline
+        if (ppu_cycles == 342) { // End of a scanline
             sprite_count = 0;
             ppu_cycles = 0;
-            target_ppu_cycles -= 341;
+            target_ppu_cycles -= 342;
             scanline_cycles = cycles;
             scanline++;
         }
 
-        if (scanline == 262) { // End of a frame
+        if (scanline == 263) { // End of a frame
             memory[0x2002] &= ~0x80;
             scanline = 0;
 
