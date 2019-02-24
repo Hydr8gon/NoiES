@@ -146,6 +146,11 @@ uint16_t ppu_memory_mirror(uint16_t address) {
     else if (address >= 0x3F20 && address < 0x4000)
         address = 0x3F00 + (address - 0x3F20) % 20;
 
+    for (int i = 0; i < 0xC; i += 4) {
+        if (address == 0x3F10 + i)
+            address -= 0x10;
+    }
+
     // Nametable mirroring
     if (mirror_type != 2) { // 4-screen
         if (mirror_type == 0) { // Horizontal
