@@ -550,7 +550,7 @@ void st_(uint8_t reg, uint8_t *dst) {
 
     if (address >= 0x8000)
         mapper_write(address, reg);
-    else if (address != 0x4016)
+    else if (address != 0x2002 && address != 0x4016)
         memory[address] = reg;
 
     // Handle PPU registers
@@ -814,18 +814,11 @@ void ppu() {
         target_ppu_cycles = (cycles - scanline_cycles) * 3;
 
     while (target_ppu_cycles > ppu_cycles) {
-        if (scanline == 0) { // Pre-render line
-            // Clear the sprite 0 hit and sprite overflow bits
-            if (ppu_cycles == 1)
-                memory[0x2002] &= ~0x60;
-        }
-        else if (scanline >= 1 && scanline <= 240) { // Visible lines
-            uint8_t y = scanline - 1;
-
+        if (scanline >= 0 && scanline < 240) { // Visible lines
             if (ppu_cycles >= 1 && ppu_cycles <= 256 && memory[0x2001] & 0x08) { // Background drawing
                 uint16_t x = ppu_cycles - 1;
                 uint16_t x_offset = x + scroll_x;
-                uint16_t y_offset = y + scroll_y;
+                uint16_t y_offset = scanline + scroll_y;
                 uint16_t table_offset = 0x2000 + (memory[0x2000] & 0x03) * 0x0400;
                 uint16_t pattern_offset = (memory[0x2000] & 0x10) << 8;
 
@@ -855,25 +848,25 @@ void ppu() {
                     bits_high = (bits_high & 0xC0) >> 4;
 
                 if ((x >= 8 || memory[0x2001] & 0x02) && bits_low != 0) {
-                    uint8_t type = framebuffer[y * 256 + x] & 0xFF;
+                    uint8_t type = framebuffer[scanline * 256 + x] & 0xFF;
 
                     // Check for a sprite 0 hit
-                    if (x < 255 && spr_memory[0] <= y + 1 && spr_memory[0] + 9 > y && spr_memory[3] <= x && spr_memory[3] + 8 > x && type != 0xFF)
+                    if (x < 255 && spr_memory[0] <= scanline + 1 && spr_memory[0] + 9 > scanline && spr_memory[3] <= x && spr_memory[3] + 8 > x && type != 0xFF)
                         memory[0x2002] |= 0x40;
 
                     // Draw a pixel
                     if (type != 0xFE)
-                        framebuffer[y * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
+                        framebuffer[scanline * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
                 }
             }
             else if (ppu_cycles >= 257 && ppu_cycles <= 320 && memory[0x2001] & 0x10) { // Sprite drawing
                 uint8_t *sprite = &spr_memory[(ppu_cycles - 257) * 4];
                 uint8_t height = (memory[0x2000] & 0x20) ? 16 : 8;
 
-                if (*sprite <= y && *sprite + height > y) {
+                if (*sprite <= scanline && *sprite + height > scanline) {
                     if (sprite_count < 8) {
                         uint8_t x = *(sprite + 3);
-                        uint8_t y_sprite = ((y - *sprite) / 8) * 16 + (y - *sprite) % 8;
+                        uint8_t y_sprite = ((scanline - *sprite) / 8) * 16 + (scanline - *sprite) % 8;
                         uint16_t pattern_offset = (height == 8) ? (memory[0x2000] & 0x08) << 1 : (*(sprite + 1) & 0x01) << 12;
                         uint16_t tile = pattern_offset + *(sprite + 1) * 16;
                         uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
@@ -888,12 +881,12 @@ void ppu() {
                             bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
 
                             if (x_offset < 256 && (x_offset >= 8 || memory[0x2001] & 0x04) && bits_low != 0) {
-                                framebuffer[(y + 1) * 256 + x_offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
+                                framebuffer[(scanline + 1) * 256 + x_offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
 
                                 // Mark opaque pixels
-                                framebuffer[(y + 1) * 256 + x_offset]--;
+                                framebuffer[(scanline + 1) * 256 + x_offset]--;
                                 if (*(sprite + 2) & 0x20) // Sprite is behind the background
-                                    framebuffer[(y + 1) * 256 + x_offset]--;
+                                    framebuffer[(scanline + 1) * 256 + x_offset]--;
                             }
                         }
 
@@ -905,24 +898,27 @@ void ppu() {
                 }
             }
         }
-        else if (scanline == 242 && ppu_cycles == 1) { // Start of the V-blank period
+        else if (scanline == 241 && ppu_cycles == 1) { // Start of the V-blank period
             memory[0x2002] |= 0x80;
             if (memory[0x2000] & 0x80)
                 interrupts[0] = true;
         }
+        else if (scanline == 261 && ppu_cycles == 1) { // Pre-render line
+            // Clear the bits for the next frame
+            memory[0x2002] &= ~0xE0;
+        }
 
         ppu_cycles++;
 
-        if (ppu_cycles == 342) { // End of a scanline
+        if (ppu_cycles == 341) { // End of a scanline
             sprite_count = 0;
             ppu_cycles = 0;
-            target_ppu_cycles -= 342;
+            target_ppu_cycles -= 341;
             scanline_cycles = cycles;
             scanline++;
         }
 
-        if (scanline == 263) { // End of a frame
-            memory[0x2002] &= ~0x80;
+        if (scanline == 262) { // End of a frame
             scanline = 0;
 
             // Copy the finished frame to the display
