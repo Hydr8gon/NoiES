@@ -153,21 +153,30 @@ uint16_t ppu_memory_mirror(uint16_t address) {
     }
 
     // Nametable mirroring
-    if (mirror_type != 2) { // 4-screen
-        if (mirror_type == 0) { // Horizontal
-            for (int i = 0; i <= 0x0800; i += 0x0800) {
-                if (address >= 0x2400 + i && address < 0x2800 + i)
-                    address -= 0x0400;
-            }
-        }
-        else if (mirror_type == 1) { // Vertical
-            if (address >= 0x2800 && address < 0x3000)
-                address -= 0x0800;
-        }
-        else { // Single-screen
+    switch (mirror_type) {
+        case 0: // 1-screen A
             if (address >= 0x2400 && address < 0x3000)
                 address -= ((address - 0x2000) / 0x0400) * 0x0400;
-        }
+            break;
+
+        case 1: // 1-screen B
+            if (address >= 0x2000 && address < 0x2400)
+                address += 0x0400;
+            else if (address >= 0x2800 && address < 0x3000)
+                address -= ((address - 0x2400) / 0x0400) * 0x0400;
+            break;
+
+        case 2: // Vertical
+            if (address >= 0x2800 && address < 0x3000)
+                address -= 0x0800;
+            break;
+
+        case 3: // Horizontal
+            if (address >= 0x2400 && address < 0x2800)
+                address -= 0x0400;
+            else if (address >= 0x2800 && address < 0x3000)
+                address -= ((address - 0x2400) / 0x0400) * 0x0400;
+            break;
     }
 
     return address;
@@ -190,7 +199,7 @@ void mapper_write(uint16_t address, uint8_t value) {
             if (mapper_shift == 5) {
                 if (address >= 0x8000 && address < 0xA000) { // Control
                     mapper_registers[1] = mapper_registers[0];
-                    mirror_type = (mapper_registers[0] & 0x02) ? !(mapper_registers[0] & 0x01) : 3;
+                    mirror_type = mapper_registers[0] & 0x03;
                 }
                 else if (address >= 0xA000 && address < 0xC000) { // VROM bank 0
                     if (mapper_registers[1] & 0x10) { // 4 KB
@@ -282,8 +291,8 @@ void mapper_write(uint16_t address, uint8_t value) {
             }
             else if (address >= 0xA000 && address < 0xC000) {
                 if (address % 2 == 0) { // Mirroring
-                    if (mirror_type != 2)
-                        mirror_type = !(value);
+                    if (mirror_type != 4)
+                        mirror_type = 2 + value;
                 }
             }
             break;
@@ -954,7 +963,7 @@ bool start(char *filename) {
     // Read the ROM header
     uint8_t header[0x10];
     fread(header, 1, 0x10, rom);
-    mirror_type = (header[6] & 0x08) ? 2 : (header[6] & 0x01);
+    mirror_type = (header[6] & 0x08) ? 4 : 2 + !(header[6] & 0x01);
     mapper_type = header[7] | (header[6] >> 4);
 
     // Verify the file format
