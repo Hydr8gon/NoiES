@@ -10,6 +10,7 @@ uint8_t ppu_memory[0x4000];
 uint8_t spr_memory[0x100];
 
 uint32_t cycles;
+uint32_t target_cycles;
 uint16_t program_counter;
 uint8_t stack_pointer = 0xFF;
 uint8_t accumulator;
@@ -19,7 +20,6 @@ uint8_t flags = 0x24; // NV_BDIZC
 bool interrupts[3];
 
 uint32_t ppu_cycles;
-uint32_t scanline_cycles;
 uint16_t scanline;
 uint8_t scroll_x;
 uint8_t scroll_y;
@@ -89,7 +89,7 @@ uint8_t *absolute() {
 uint8_t *absolute_x(bool page_cycle) {
     uint16_t address = memory[++program_counter] | (memory[++program_counter] << 8);
     if (page_cycle && address / 0x100 != (address + register_x) / 0x100) // Page cross
-        cycles++;
+        target_cycles += 3;
     return &memory[address + register_x];
 }
 
@@ -97,7 +97,7 @@ uint8_t *absolute_x(bool page_cycle) {
 uint8_t *absolute_y(bool page_cycle) {
     uint16_t address = memory[++program_counter] | (memory[++program_counter] << 8);
     if (page_cycle && address / 0x100 != (address + register_y) / 0x100) // Page cross
-        cycles++;
+        target_cycles += 3;
     return &memory[address + register_y];
 }
 
@@ -121,7 +121,7 @@ uint8_t *indirect_y(bool page_cycle) {
     uint8_t address_upper = memory[(memory[program_counter] + 1) % 0x100];
     uint16_t address = address_lower | (address_upper << 8);
     if (page_cycle && address / 0x100 != (address + register_y) / 0x100) // Page cross
-        cycles++;
+        target_cycles += 3;
     return &memory[address + register_y];
 }
 
@@ -375,9 +375,9 @@ void b__(bool condition) {
     int8_t value = *immediate();
     if (condition) {
         program_counter += value;
-        cycles++;
+        target_cycles += 3;
         if ((program_counter + 1) / 0x100 != (program_counter - value) / 0x100) // Page cross
-            cycles++;
+            target_cycles += 3;
     }
 }
 
@@ -566,7 +566,7 @@ void st_(uint8_t reg, uint8_t *dst) {
     switch (address) {
         case 0x4014: // OAMDMA: DMA transfer to sprite memory
             memcpy(spr_memory, &memory[memory[0x4014] * 0x100], 0x100);
-            cycles += (cycles % 2) ? 514 : 513;
+            target_cycles += ((target_cycles / 3) % 2) ? 1542 : 1539;
             break;
 
         case 0x2004: // OAMDATA: 1 byte transfer to sprite memory
@@ -606,6 +606,16 @@ void st_(uint8_t reg, uint8_t *dst) {
 }
 
 void cpu() {
+    cycles++;
+    if (cycles < target_cycles)
+        return;
+
+    // Reset the cycle counter every second
+    if (target_cycles > 5360520) {
+        target_cycles -= 5360520;
+        cycles -= 5360520;
+    }
+
     // Handle interrupts
     for (int i = 0; i < 3; i++) {
         if (interrupts[i]) {
@@ -615,194 +625,194 @@ void cpu() {
             cl_(0x10);
             se_(0x04);
             program_counter = memory[0xFFFB + i * 2] << 8 | memory[0xFFFA + i * 2];
-            cycles += 7;
+            target_cycles += 21;
             interrupts[i] = false;
         }
     }
 
     // Decode opcode
     switch (memory[program_counter]) {
-        case 0x69: adc(*immediate());      cycles += 2; break; // ADC immediate
-        case 0x65: adc(*zero_page());      cycles += 3; break; // ADC zero page
-        case 0x75: adc(*zero_page_x());    cycles += 4; break; // ADC zero page X
-        case 0x6D: adc(*absolute());       cycles += 4; break; // ADC absolute
-        case 0x7D: adc(*absolute_x(true)); cycles += 4; break; // ADC absolute X
-        case 0x79: adc(*absolute_y(true)); cycles += 4; break; // ADC absolute Y
-        case 0x61: adc(*indirect_x());     cycles += 6; break; // ADC indirect X
-        case 0x71: adc(*indirect_y(true)); cycles += 5; break; // ADC indirect Y
+        case 0x69: adc(*immediate());      target_cycles += 6;  break; // ADC immediate
+        case 0x65: adc(*zero_page());      target_cycles += 9;  break; // ADC zero page
+        case 0x75: adc(*zero_page_x());    target_cycles += 12; break; // ADC zero page X
+        case 0x6D: adc(*absolute());       target_cycles += 12; break; // ADC absolute
+        case 0x7D: adc(*absolute_x(true)); target_cycles += 12; break; // ADC absolute X
+        case 0x79: adc(*absolute_y(true)); target_cycles += 12; break; // ADC absolute Y
+        case 0x61: adc(*indirect_x());     target_cycles += 18; break; // ADC indirect X
+        case 0x71: adc(*indirect_y(true)); target_cycles += 15; break; // ADC indirect Y
 
-        case 0x29: _and(*immediate());      cycles += 2; break; // AND immediate
-        case 0x25: _and(*zero_page());      cycles += 3; break; // AND zero page
-        case 0x35: _and(*zero_page_x());    cycles += 4; break; // AND zero page X
-        case 0x2D: _and(*absolute());       cycles += 4; break; // AND absolute
-        case 0x3D: _and(*absolute_x(true)); cycles += 4; break; // AND absolute X
-        case 0x39: _and(*absolute_y(true)); cycles += 4; break; // AND absolute Y
-        case 0x21: _and(*indirect_x());     cycles += 6; break; // AND indirect X
-        case 0x31: _and(*indirect_y(true)); cycles += 5; break; // AND indirect Y
+        case 0x29: _and(*immediate());      target_cycles += 6;  break; // AND immediate
+        case 0x25: _and(*zero_page());      target_cycles += 9;  break; // AND zero page
+        case 0x35: _and(*zero_page_x());    target_cycles += 12; break; // AND zero page X
+        case 0x2D: _and(*absolute());       target_cycles += 12; break; // AND absolute
+        case 0x3D: _and(*absolute_x(true)); target_cycles += 12; break; // AND absolute X
+        case 0x39: _and(*absolute_y(true)); target_cycles += 12; break; // AND absolute Y
+        case 0x21: _and(*indirect_x());     target_cycles += 18; break; // AND indirect X
+        case 0x31: _and(*indirect_y(true)); target_cycles += 15; break; // AND indirect Y
 
-        case 0x0A: asl(&accumulator);       cycles += 2; break; // ASL accumulator
-        case 0x06: asl(zero_page());        cycles += 5; break; // ASL zero page
-        case 0x16: asl(zero_page_x());      cycles += 6; break; // ASL zero page X
-        case 0x0E: asl(absolute());         cycles += 6; break; // ASL absolute
-        case 0x1E: asl(absolute_x(false));  cycles += 7; break; // ASL absolute X
+        case 0x0A: asl(&accumulator);       target_cycles += 6;  break; // ASL accumulator
+        case 0x06: asl(zero_page());        target_cycles += 15; break; // ASL zero page
+        case 0x16: asl(zero_page_x());      target_cycles += 18; break; // ASL zero page X
+        case 0x0E: asl(absolute());         target_cycles += 18; break; // ASL absolute
+        case 0x1E: asl(absolute_x(false));  target_cycles += 21; break; // ASL absolute X
 
-        case 0x24: bit(*zero_page()); cycles += 3; break; // BIT zero page
-        case 0x2C: bit(*absolute());  cycles += 4; break; // BIT absolute
+        case 0x24: bit(*zero_page()); target_cycles += 9;  break; // BIT zero page
+        case 0x2C: bit(*absolute());  target_cycles += 12; break; // BIT absolute
 
-        case 0x10: b__(!(flags & 0x80)); cycles += 2; break; // BPL
-        case 0x30: b__( (flags & 0x80)); cycles += 2; break; // BMI
-        case 0x50: b__(!(flags & 0x40)); cycles += 2; break; // BVC
-        case 0x70: b__( (flags & 0x40)); cycles += 2; break; // BVS
-        case 0x90: b__(!(flags & 0x01)); cycles += 2; break; // BCC
-        case 0xB0: b__( (flags & 0x01)); cycles += 2; break; // BCS
-        case 0xD0: b__(!(flags & 0x02)); cycles += 2; break; // BNE
-        case 0xF0: b__( (flags & 0x02)); cycles += 2; break; // BEQ
+        case 0x10: b__(!(flags & 0x80)); target_cycles += 6; break; // BPL
+        case 0x30: b__( (flags & 0x80)); target_cycles += 6; break; // BMI
+        case 0x50: b__(!(flags & 0x40)); target_cycles += 6; break; // BVC
+        case 0x70: b__( (flags & 0x40)); target_cycles += 6; break; // BVS
+        case 0x90: b__(!(flags & 0x01)); target_cycles += 6; break; // BCC
+        case 0xB0: b__( (flags & 0x01)); target_cycles += 6; break; // BCS
+        case 0xD0: b__(!(flags & 0x02)); target_cycles += 6; break; // BNE
+        case 0xF0: b__( (flags & 0x02)); target_cycles += 6; break; // BEQ
 
-        case 0x00: brk(); cycles += 7; break; // BRK
+        case 0x00: brk(); target_cycles += 21; break; // BRK
 
-        case 0xC9: cp_(accumulator, *immediate());      cycles += 2; break; // CMP immediate
-        case 0xC5: cp_(accumulator, *zero_page());      cycles += 3; break; // CMP zero page
-        case 0xD5: cp_(accumulator, *zero_page_x());    cycles += 4; break; // CMP zero page X
-        case 0xCD: cp_(accumulator, *absolute());       cycles += 4; break; // CMP absolute
-        case 0xDD: cp_(accumulator, *absolute_x(true)); cycles += 4; break; // CMP absolute X
-        case 0xD9: cp_(accumulator, *absolute_y(true)); cycles += 4; break; // CMP absolute Y
-        case 0xC1: cp_(accumulator, *indirect_x());     cycles += 6; break; // CMP indirect X
-        case 0xD1: cp_(accumulator, *indirect_y(true)); cycles += 5; break; // CMP indirect Y
+        case 0xC9: cp_(accumulator, *immediate());      target_cycles += 6;  break; // CMP immediate
+        case 0xC5: cp_(accumulator, *zero_page());      target_cycles += 9;  break; // CMP zero page
+        case 0xD5: cp_(accumulator, *zero_page_x());    target_cycles += 12; break; // CMP zero page X
+        case 0xCD: cp_(accumulator, *absolute());       target_cycles += 12; break; // CMP absolute
+        case 0xDD: cp_(accumulator, *absolute_x(true)); target_cycles += 12; break; // CMP absolute X
+        case 0xD9: cp_(accumulator, *absolute_y(true)); target_cycles += 12; break; // CMP absolute Y
+        case 0xC1: cp_(accumulator, *indirect_x());     target_cycles += 18; break; // CMP indirect X
+        case 0xD1: cp_(accumulator, *indirect_y(true)); target_cycles += 15; break; // CMP indirect Y
 
-        case 0xE0: cp_(register_x, *immediate()); cycles += 2; break; // CPX immediate
-        case 0xE4: cp_(register_x, *zero_page()); cycles += 3; break; // CPX zero page
-        case 0xEC: cp_(register_x, *absolute());  cycles += 4; break; // CPX absolute
+        case 0xE0: cp_(register_x, *immediate()); target_cycles += 6;  break; // CPX immediate
+        case 0xE4: cp_(register_x, *zero_page()); target_cycles += 9;  break; // CPX zero page
+        case 0xEC: cp_(register_x, *absolute());  target_cycles += 12; break; // CPX absolute
 
-        case 0xC0: cp_(register_y, *immediate()); cycles += 2; break; // CPY immediate
-        case 0xC4: cp_(register_y, *zero_page()); cycles += 3; break; // CPY zero page
-        case 0xCC: cp_(register_y, *absolute());  cycles += 4; break; // CPY absolute
+        case 0xC0: cp_(register_y, *immediate()); target_cycles += 6;  break; // CPY immediate
+        case 0xC4: cp_(register_y, *zero_page()); target_cycles += 9;  break; // CPY zero page
+        case 0xCC: cp_(register_y, *absolute());  target_cycles += 12; break; // CPY absolute
 
-        case 0xC6: de_(zero_page());       cycles += 5; break; // DEC zero page
-        case 0xD6: de_(zero_page_x());     cycles += 6; break; // DEC zero page X
-        case 0xCE: de_(absolute());        cycles += 6; break; // DEC absolute
-        case 0xDE: de_(absolute_x(false)); cycles += 7; break; // DEC absolute X
+        case 0xC6: de_(zero_page());       target_cycles += 15; break; // DEC zero page
+        case 0xD6: de_(zero_page_x());     target_cycles += 18; break; // DEC zero page X
+        case 0xCE: de_(absolute());        target_cycles += 18; break; // DEC absolute
+        case 0xDE: de_(absolute_x(false)); target_cycles += 21; break; // DEC absolute X
         
-        case 0x49: eor(*immediate());      cycles += 2; break; // EOR immediate
-        case 0x45: eor(*zero_page());      cycles += 3; break; // EOR zero page
-        case 0x55: eor(*zero_page_x());    cycles += 4; break; // EOR zero page X
-        case 0x4D: eor(*absolute());       cycles += 4; break; // EOR absolute
-        case 0x5D: eor(*absolute_x(true)); cycles += 4; break; // EOR absolute X
-        case 0x59: eor(*absolute_y(true)); cycles += 4; break; // EOR absolute Y
-        case 0x41: eor(*indirect_x());     cycles += 6; break; // EOR indirect X
-        case 0x51: eor(*indirect_y(true)); cycles += 5; break; // EOR indirect Y
+        case 0x49: eor(*immediate());      target_cycles += 6;  break; // EOR immediate
+        case 0x45: eor(*zero_page());      target_cycles += 9;  break; // EOR zero page
+        case 0x55: eor(*zero_page_x());    target_cycles += 12; break; // EOR zero page X
+        case 0x4D: eor(*absolute());       target_cycles += 12; break; // EOR absolute
+        case 0x5D: eor(*absolute_x(true)); target_cycles += 12; break; // EOR absolute X
+        case 0x59: eor(*absolute_y(true)); target_cycles += 12; break; // EOR absolute Y
+        case 0x41: eor(*indirect_x());     target_cycles += 18; break; // EOR indirect X
+        case 0x51: eor(*indirect_y(true)); target_cycles += 15; break; // EOR indirect Y
 
-        case 0x18: cl_(0x01); cycles += 2; break; // CLC
-        case 0x38: se_(0x01); cycles += 2; break; // SEC
-        case 0x58: cl_(0x04); cycles += 2; break; // CLI
-        case 0x78: se_(0x04); cycles += 2; break; // SEI
-        case 0xB8: cl_(0x40); cycles += 2; break; // CLV
-        case 0xD8: cl_(0x08); cycles += 2; break; // CLD
-        case 0xF8: se_(0x08); cycles += 2; break; // SED
+        case 0x18: cl_(0x01); target_cycles += 6; break; // CLC
+        case 0x38: se_(0x01); target_cycles += 6; break; // SEC
+        case 0x58: cl_(0x04); target_cycles += 6; break; // CLI
+        case 0x78: se_(0x04); target_cycles += 6; break; // SEI
+        case 0xB8: cl_(0x40); target_cycles += 6; break; // CLV
+        case 0xD8: cl_(0x08); target_cycles += 6; break; // CLD
+        case 0xF8: se_(0x08); target_cycles += 6; break; // SED
 
-        case 0xE6: in_(zero_page());       cycles += 5; break; // INC zero page
-        case 0xF6: in_(zero_page_x());     cycles += 6; break; // INC zero page X
-        case 0xEE: in_(absolute());        cycles += 6; break; // INC absolute
-        case 0xFE: in_(absolute_x(false)); cycles += 7; break; // INC absolute X
+        case 0xE6: in_(zero_page());       target_cycles += 15; break; // INC zero page
+        case 0xF6: in_(zero_page_x());     target_cycles += 18; break; // INC zero page X
+        case 0xEE: in_(absolute());        target_cycles += 18; break; // INC absolute
+        case 0xFE: in_(absolute_x(false)); target_cycles += 21; break; // INC absolute X
 
-        case 0x4C: jmp(absolute()); cycles += 3; break; // JMP absolute
-        case 0x6C: jmp(indirect()); cycles += 5; break; // JMP indirect
+        case 0x4C: jmp(absolute()); target_cycles += 9;  break; // JMP absolute
+        case 0x6C: jmp(indirect()); target_cycles += 15; break; // JMP indirect
 
-        case 0x20: jsr(absolute()); cycles += 6; break; // JSR absolute
+        case 0x20: jsr(absolute()); target_cycles += 18; break; // JSR absolute
 
-        case 0xA9: ld_(&accumulator, immediate());      cycles += 2; break; // LDA immediate
-        case 0xA5: ld_(&accumulator, zero_page());      cycles += 3; break; // LDA zero page
-        case 0xB5: ld_(&accumulator, zero_page_x());    cycles += 4; break; // LDA zero page X
-        case 0xAD: ld_(&accumulator, absolute());       cycles += 4; break; // LDA absolute
-        case 0xBD: ld_(&accumulator, absolute_x(true)); cycles += 4; break; // LDA absolute X
-        case 0xB9: ld_(&accumulator, absolute_y(true)); cycles += 4; break; // LDA absolute Y
-        case 0xA1: ld_(&accumulator, indirect_x());     cycles += 6; break; // LDA indirect X
-        case 0xB1: ld_(&accumulator, indirect_y(true)); cycles += 5; break; // LDA indirect Y
+        case 0xA9: ld_(&accumulator, immediate());      target_cycles += 6;  break; // LDA immediate
+        case 0xA5: ld_(&accumulator, zero_page());      target_cycles += 9;  break; // LDA zero page
+        case 0xB5: ld_(&accumulator, zero_page_x());    target_cycles += 12; break; // LDA zero page X
+        case 0xAD: ld_(&accumulator, absolute());       target_cycles += 12; break; // LDA absolute
+        case 0xBD: ld_(&accumulator, absolute_x(true)); target_cycles += 12; break; // LDA absolute X
+        case 0xB9: ld_(&accumulator, absolute_y(true)); target_cycles += 12; break; // LDA absolute Y
+        case 0xA1: ld_(&accumulator, indirect_x());     target_cycles += 18; break; // LDA indirect X
+        case 0xB1: ld_(&accumulator, indirect_y(true)); target_cycles += 15; break; // LDA indirect Y
 
-        case 0xA2: ld_(&register_x, immediate());      cycles += 2; break; // LDX immediate
-        case 0xA6: ld_(&register_x, zero_page());      cycles += 2; break; // LDX zero page
-        case 0xB6: ld_(&register_x, zero_page_y());    cycles += 2; break; // LDX zero page Y
-        case 0xAE: ld_(&register_x, absolute());       cycles += 3; break; // LDX absolute
-        case 0xBE: ld_(&register_x, absolute_y(true)); cycles += 3; break; // LDX absolute Y
+        case 0xA2: ld_(&register_x, immediate());      target_cycles += 6; break; // LDX immediate
+        case 0xA6: ld_(&register_x, zero_page());      target_cycles += 6; break; // LDX zero page
+        case 0xB6: ld_(&register_x, zero_page_y());    target_cycles += 6; break; // LDX zero page Y
+        case 0xAE: ld_(&register_x, absolute());       target_cycles += 9; break; // LDX absolute
+        case 0xBE: ld_(&register_x, absolute_y(true)); target_cycles += 9; break; // LDX absolute Y
 
-        case 0xA0: ld_(&register_y, immediate());      cycles += 2; break; // LDY immediate
-        case 0xA4: ld_(&register_y, zero_page());      cycles += 2; break; // LDY zero page
-        case 0xB4: ld_(&register_y, zero_page_x());    cycles += 2; break; // LDY zero page X
-        case 0xAC: ld_(&register_y, absolute());       cycles += 3; break; // LDY absolute
-        case 0xBC: ld_(&register_y, absolute_x(true)); cycles += 3; break; // LDY absolute X
+        case 0xA0: ld_(&register_y, immediate());      target_cycles += 6; break; // LDY immediate
+        case 0xA4: ld_(&register_y, zero_page());      target_cycles += 6; break; // LDY zero page
+        case 0xB4: ld_(&register_y, zero_page_x());    target_cycles += 6; break; // LDY zero page X
+        case 0xAC: ld_(&register_y, absolute());       target_cycles += 9; break; // LDY absolute
+        case 0xBC: ld_(&register_y, absolute_x(true)); target_cycles += 9; break; // LDY absolute X
 
-        case 0x4A: lsr(&accumulator);      cycles += 2; break; // LSR accumulator
-        case 0x46: lsr(zero_page());       cycles += 5; break; // LSR zero page
-        case 0x56: lsr(zero_page_x());     cycles += 6; break; // LSR zero page X
-        case 0x4E: lsr(absolute());        cycles += 6; break; // LSR absolute
-        case 0x5E: lsr(absolute_x(false)); cycles += 7; break; // LSR absolute X
+        case 0x4A: lsr(&accumulator);      target_cycles += 6;  break; // LSR accumulator
+        case 0x46: lsr(zero_page());       target_cycles += 15; break; // LSR zero page
+        case 0x56: lsr(zero_page_x());     target_cycles += 18; break; // LSR zero page X
+        case 0x4E: lsr(absolute());        target_cycles += 18; break; // LSR absolute
+        case 0x5E: lsr(absolute_x(false)); target_cycles += 21; break; // LSR absolute X
 
-        case 0xEA: cycles += 2; break; // NOP
+        case 0xEA: target_cycles += 6; break; // NOP
 
-        case 0x09: ora(*immediate());      cycles += 2; break; // ORA immediate
-        case 0x05: ora(*zero_page());      cycles += 3; break; // ORA zero page
-        case 0x15: ora(*zero_page_x());    cycles += 4; break; // ORA zero page X
-        case 0x0D: ora(*absolute());       cycles += 4; break; // ORA absolute
-        case 0x1D: ora(*absolute_x(true)); cycles += 4; break; // ORA absolute X
-        case 0x19: ora(*absolute_y(true)); cycles += 4; break; // ORA absolute Y
-        case 0x01: ora(*indirect_x());     cycles += 6; break; // ORA indirect X
-        case 0x11: ora(*indirect_y(true)); cycles += 5; break; // ORA indirect Y
+        case 0x09: ora(*immediate());      target_cycles += 6;  break; // ORA immediate
+        case 0x05: ora(*zero_page());      target_cycles += 9;  break; // ORA zero page
+        case 0x15: ora(*zero_page_x());    target_cycles += 12; break; // ORA zero page X
+        case 0x0D: ora(*absolute());       target_cycles += 12; break; // ORA absolute
+        case 0x1D: ora(*absolute_x(true)); target_cycles += 12; break; // ORA absolute X
+        case 0x19: ora(*absolute_y(true)); target_cycles += 12; break; // ORA absolute Y
+        case 0x01: ora(*indirect_x());     target_cycles += 18; break; // ORA indirect X
+        case 0x11: ora(*indirect_y(true)); target_cycles += 15; break; // ORA indirect Y
 
-        case 0xAA: t__(&accumulator, &register_x); cycles += 2; break; // TAX
-        case 0x8A: t__(&register_x, &accumulator); cycles += 2; break; // TXA
-        case 0xCA: de_(&register_x);               cycles += 2; break; // DEX
-        case 0xE8: in_(&register_x);               cycles += 2; break; // INX
-        case 0xA8: t__(&accumulator, &register_y); cycles += 2; break; // TAY
-        case 0x98: t__(&register_y, &accumulator); cycles += 2; break; // TYA
-        case 0x88: de_(&register_y);               cycles += 2; break; // DEY
-        case 0xC8: in_(&register_y);               cycles += 2; break; // INY
+        case 0xAA: t__(&accumulator, &register_x); target_cycles += 6; break; // TAX
+        case 0x8A: t__(&register_x, &accumulator); target_cycles += 6; break; // TXA
+        case 0xCA: de_(&register_x);               target_cycles += 6; break; // DEX
+        case 0xE8: in_(&register_x);               target_cycles += 6; break; // INX
+        case 0xA8: t__(&accumulator, &register_y); target_cycles += 6; break; // TAY
+        case 0x98: t__(&register_y, &accumulator); target_cycles += 6; break; // TYA
+        case 0x88: de_(&register_y);               target_cycles += 6; break; // DEY
+        case 0xC8: in_(&register_y);               target_cycles += 6; break; // INY
 
-        case 0x2A: rol(&accumulator);      cycles += 2; break; // ROL accumulator
-        case 0x26: rol(zero_page());       cycles += 5; break; // ROL zero page
-        case 0x36: rol(zero_page_x());     cycles += 6; break; // ROL zero page X
-        case 0x2E: rol(absolute());        cycles += 6; break; // ROL absolute
-        case 0x3E: rol(absolute_x(false)); cycles += 7; break; // ROL absolute X
+        case 0x2A: rol(&accumulator);      target_cycles += 6;  break; // ROL accumulator
+        case 0x26: rol(zero_page());       target_cycles += 15; break; // ROL zero page
+        case 0x36: rol(zero_page_x());     target_cycles += 18; break; // ROL zero page X
+        case 0x2E: rol(absolute());        target_cycles += 18; break; // ROL absolute
+        case 0x3E: rol(absolute_x(false)); target_cycles += 21; break; // ROL absolute X
 
-        case 0x6A: ror(&accumulator);      cycles += 2; break; // ROR accumulator
-        case 0x66: ror(zero_page());       cycles += 5; break; // ROR zero page
-        case 0x76: ror(zero_page_x());     cycles += 6; break; // ROR zero page X
-        case 0x6E: ror(absolute());        cycles += 6; break; // ROR absolute
-        case 0x7E: ror(absolute_x(false)); cycles += 7; break; // ROR absolute X
+        case 0x6A: ror(&accumulator);      target_cycles += 6;  break; // ROR accumulator
+        case 0x66: ror(zero_page());       target_cycles += 15; break; // ROR zero page
+        case 0x76: ror(zero_page_x());     target_cycles += 18; break; // ROR zero page X
+        case 0x6E: ror(absolute());        target_cycles += 18; break; // ROR absolute
+        case 0x7E: ror(absolute_x(false)); target_cycles += 21; break; // ROR absolute X
 
-        case 0x40: rti(); cycles += 6; break; // RTI
+        case 0x40: rti(); target_cycles += 18; break; // RTI
 
-        case 0x60: rts(); cycles += 6; break; // RTS
+        case 0x60: rts(); target_cycles += 18; break; // RTS
 
-        case 0xE9: sbc(*immediate());      cycles += 2; break; // SBC immediate
-        case 0xE5: sbc(*zero_page());      cycles += 3; break; // SBC zero page
-        case 0xF5: sbc(*zero_page_x());    cycles += 4; break; // SBC zero page X
-        case 0xED: sbc(*absolute());       cycles += 4; break; // SBC absolute
-        case 0xFD: sbc(*absolute_x(true)); cycles += 4; break; // SBC absolute X
-        case 0xF9: sbc(*absolute_y(true)); cycles += 4; break; // SBC absolute Y
-        case 0xE1: sbc(*indirect_x());     cycles += 6; break; // SBC indirect X
-        case 0xF1: sbc(*indirect_y(true)); cycles += 5; break; // SBC indirect Y
+        case 0xE9: sbc(*immediate());      target_cycles += 6;  break; // SBC immediate
+        case 0xE5: sbc(*zero_page());      target_cycles += 9;  break; // SBC zero page
+        case 0xF5: sbc(*zero_page_x());    target_cycles += 12; break; // SBC zero page X
+        case 0xED: sbc(*absolute());       target_cycles += 12; break; // SBC absolute
+        case 0xFD: sbc(*absolute_x(true)); target_cycles += 12; break; // SBC absolute X
+        case 0xF9: sbc(*absolute_y(true)); target_cycles += 12; break; // SBC absolute Y
+        case 0xE1: sbc(*indirect_x());     target_cycles += 18; break; // SBC indirect X
+        case 0xF1: sbc(*indirect_y(true)); target_cycles += 15; break; // SBC indirect Y
 
-        case 0x85: st_(accumulator, zero_page());       cycles += 3; break; // STA zero page
-        case 0x95: st_(accumulator, zero_page_x());     cycles += 4; break; // STA zero page X
-        case 0x8D: st_(accumulator, absolute());        cycles += 4; break; // STA absolute
-        case 0x9D: st_(accumulator, absolute_x(false)); cycles += 5; break; // STA absolute X
-        case 0x99: st_(accumulator, absolute_y(false)); cycles += 5; break; // STA absolute Y
-        case 0x81: st_(accumulator, indirect_x());      cycles += 6; break; // STA indirect X
-        case 0x91: st_(accumulator, indirect_y(false)); cycles += 6; break; // STA indirect Y
+        case 0x85: st_(accumulator, zero_page());       target_cycles += 9;  break; // STA zero page
+        case 0x95: st_(accumulator, zero_page_x());     target_cycles += 12; break; // STA zero page X
+        case 0x8D: st_(accumulator, absolute());        target_cycles += 12; break; // STA absolute
+        case 0x9D: st_(accumulator, absolute_x(false)); target_cycles += 15; break; // STA absolute X
+        case 0x99: st_(accumulator, absolute_y(false)); target_cycles += 15; break; // STA absolute Y
+        case 0x81: st_(accumulator, indirect_x());      target_cycles += 18; break; // STA indirect X
+        case 0x91: st_(accumulator, indirect_y(false)); target_cycles += 18; break; // STA indirect Y
 
-        case 0x9A: txs();                            cycles += 2; break; // TXS
-        case 0xBA: t__(&stack_pointer, &register_x); cycles += 2; break; // TSX
-        case 0x48: ph_(accumulator);                 cycles += 3; break; // PHA
-        case 0x68: pla();                            cycles += 4; break; // PLA
-        case 0x08: php();                            cycles += 3; break; // PHP
-        case 0x28: plp();                            cycles += 4; break; // PLP
+        case 0x9A: txs();                            target_cycles += 6;  break; // TXS
+        case 0xBA: t__(&stack_pointer, &register_x); target_cycles += 6;  break; // TSX
+        case 0x48: ph_(accumulator);                 target_cycles += 9;  break; // PHA
+        case 0x68: pla();                            target_cycles += 12; break; // PLA
+        case 0x08: php();                            target_cycles += 9;  break; // PHP
+        case 0x28: plp();                            target_cycles += 12; break; // PLP
 
-        case 0x86: st_(register_x, zero_page());   cycles += 3; break; // STX zero page
-        case 0x96: st_(register_x, zero_page_y()); cycles += 4; break; // STX zero page Y
-        case 0x8E: st_(register_x, absolute());    cycles += 4; break; // STX absolute
+        case 0x86: st_(register_x, zero_page());   target_cycles += 9;  break; // STX zero page
+        case 0x96: st_(register_x, zero_page_y()); target_cycles += 12; break; // STX zero page Y
+        case 0x8E: st_(register_x, absolute());    target_cycles += 12; break; // STX absolute
 
-        case 0x84: st_(register_y, zero_page());   cycles += 3; break; // STY zero page
-        case 0x94: st_(register_y, zero_page_x()); cycles += 4; break; // STY zero page X
-        case 0x8C: st_(register_y, absolute());    cycles += 4; break; // STY absolute
+        case 0x84: st_(register_y, zero_page());   target_cycles += 9;  break; // STY zero page
+        case 0x94: st_(register_y, zero_page_x()); target_cycles += 12; break; // STY zero page X
+        case 0x8C: st_(register_y, absolute());    target_cycles += 12; break; // STY absolute
 
         default:
             printf("Unknown opcode: 0x%X\n", memory[program_counter]);
@@ -810,139 +820,126 @@ void cpu() {
     }
 
     program_counter++;
-    if (cycles > 1786840)
-        cycles -= 1786840;
 }
 
 void ppu() {
-    // Determine how many PPU cycles to run based on how many CPU cycles ran
-    uint32_t target_ppu_cycles;
-    if (scanline_cycles > cycles)
-        target_ppu_cycles = (cycles + 1786840 - scanline_cycles) * 3;
-    else
-        target_ppu_cycles = (cycles - scanline_cycles) * 3;
+    if (scanline >= 0 && scanline < 240) { // Visible lines
+        if (ppu_cycles >= 1 && ppu_cycles <= 256 && memory[0x2001] & 0x08) { // Background drawing
+            uint16_t x = ppu_cycles - 1;
+            uint16_t x_offset = x + scroll_x;
+            uint16_t y_offset = scanline + scroll_y;
+            uint16_t table_offset = 0x2000 + (memory[0x2000] & 0x03) * 0x0400;
+            uint16_t pattern_offset = (memory[0x2000] & 0x10) << 8;
 
-    while (target_ppu_cycles > ppu_cycles) {
-        if (scanline >= 0 && scanline < 240) { // Visible lines
-            if (ppu_cycles >= 1 && ppu_cycles <= 256 && memory[0x2001] & 0x08) { // Background drawing
-                uint16_t x = ppu_cycles - 1;
-                uint16_t x_offset = x + scroll_x;
-                uint16_t y_offset = scanline + scroll_y;
-                uint16_t table_offset = 0x2000 + (memory[0x2000] & 0x03) * 0x0400;
-                uint16_t pattern_offset = (memory[0x2000] & 0x10) << 8;
+            // Change nametable based on scroll offset
+            if (x_offset >= 256)
+                table_offset += 0x0400;
+            if (y_offset >= 240)
+                table_offset += 0x0800;
 
-                // Change nametable based on scroll offset
-                if (x_offset >= 256)
-                    table_offset += 0x0400;
-                if (y_offset >= 240)
-                    table_offset += 0x0800;
+            x_offset %= 256;
+            y_offset %= 240;
+            table_offset = ppu_memory_mirror(table_offset);
 
-                x_offset %= 256;
-                y_offset %= 240;
-                table_offset = ppu_memory_mirror(table_offset);
+            uint16_t tile = pattern_offset + ppu_memory[table_offset + (y_offset / 8) * 32 + x_offset / 8] * 16;
+            uint8_t bits_low = ppu_memory[tile + y_offset % 8] & (0x80 >> (x_offset % 8)) ? 0x01 : 0x00;
+            bits_low |= ppu_memory[tile + y_offset % 8 + 8] & (0x80 >> (x_offset % 8)) ? 0x02 : 0x00;
 
-                uint16_t tile = pattern_offset + ppu_memory[table_offset + (y_offset / 8) * 32 + x_offset / 8] * 16;
-                uint8_t bits_low = ppu_memory[tile + y_offset % 8] & (0x80 >> (x_offset % 8)) ? 0x01 : 0x00;
-                bits_low |= ppu_memory[tile + y_offset % 8 + 8] & (0x80 >> (x_offset % 8)) ? 0x02 : 0x00;
+            // Get the upper 2 bits of the palette index from the attribute table
+            uint8_t bits_high = ppu_memory[table_offset + 0x03C0 + (y_offset / 32) * 8 + x_offset / 32];
+            if ((x_offset / 16) % 2 == 0 && (y_offset / 16) % 2 == 0) // Top left
+                bits_high = (bits_high & 0x03) << 2;
+            else if ((x_offset / 16) % 2 == 1 && (y_offset / 16) % 2 == 0) // Top right
+                bits_high = (bits_high & 0x0C) << 0;
+            else if ((x_offset / 16) % 2 == 0 && (y_offset / 16) % 2 == 1) // Bottom left
+                bits_high = (bits_high & 0x30) >> 2;
+            else // Bottom right
+                bits_high = (bits_high & 0xC0) >> 4;
 
-                // Get the upper 2 bits of the palette index from the attribute table
-                uint8_t bits_high = ppu_memory[table_offset + 0x03C0 + (y_offset / 32) * 8 + x_offset / 32];
-                if ((x_offset / 16) % 2 == 0 && (y_offset / 16) % 2 == 0) // Top left
-                    bits_high = (bits_high & 0x03) << 2;
-                else if ((x_offset / 16) % 2 == 1 && (y_offset / 16) % 2 == 0) // Top right
-                    bits_high = (bits_high & 0x0C) << 0;
-                else if ((x_offset / 16) % 2 == 0 && (y_offset / 16) % 2 == 1) // Bottom left
-                    bits_high = (bits_high & 0x30) >> 2;
-                else // Bottom right
-                    bits_high = (bits_high & 0xC0) >> 4;
+            if ((x >= 8 || memory[0x2001] & 0x02) && bits_low != 0) {
+                uint8_t type = framebuffer[scanline * 256 + x] & 0xFF;
 
-                if ((x >= 8 || memory[0x2001] & 0x02) && bits_low != 0) {
-                    uint8_t type = framebuffer[scanline * 256 + x] & 0xFF;
+                // Check for a sprite 0 hit
+                if (x < 255 && spr_memory[0] <= scanline + 1 && spr_memory[0] + 9 > scanline && spr_memory[3] <= x && spr_memory[3] + 8 > x && type != 0xFF)
+                    memory[0x2002] |= 0x40;
 
-                    // Check for a sprite 0 hit
-                    if (x < 255 && spr_memory[0] <= scanline + 1 && spr_memory[0] + 9 > scanline && spr_memory[3] <= x && spr_memory[3] + 8 > x && type != 0xFF)
-                        memory[0x2002] |= 0x40;
-
-                    // Draw a pixel
-                    if (type != 0xFE)
-                        framebuffer[scanline * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
-                }
+                // Draw a pixel
+                if (type != 0xFE)
+                    framebuffer[scanline * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
             }
-            else if (ppu_cycles >= 257 && ppu_cycles <= 320 && memory[0x2001] & 0x10) { // Sprite drawing
-                uint8_t *sprite = &spr_memory[(ppu_cycles - 257) * 4];
-                uint8_t height = (memory[0x2000] & 0x20) ? 16 : 8;
+        }
+        else if (ppu_cycles >= 257 && ppu_cycles <= 320 && memory[0x2001] & 0x10) { // Sprite drawing
+            uint8_t *sprite = &spr_memory[(ppu_cycles - 257) * 4];
+            uint8_t height = (memory[0x2000] & 0x20) ? 16 : 8;
 
-                if (*sprite <= scanline && *sprite + height > scanline) {
-                    if (sprite_count < 8) {
-                        uint8_t x = *(sprite + 3);
-                        uint8_t y_sprite = ((scanline - *sprite) / 8) * 16 + (scanline - *sprite) % 8;
-                        uint16_t pattern_offset = (height == 8) ? (memory[0x2000] & 0x08) << 1 : (*(sprite + 1) & 0x01) << 12;
-                        uint16_t tile = pattern_offset + *(sprite + 1) * 16;
-                        uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
+            if (*sprite <= scanline && *sprite + height > scanline) {
+                if (sprite_count < 8) {
+                    uint8_t x = *(sprite + 3);
+                    uint8_t y_sprite = ((scanline - *sprite) / 8) * 16 + (scanline - *sprite) % 8;
+                    uint16_t pattern_offset = (height == 8) ? (memory[0x2000] & 0x08) << 1 : (*(sprite + 1) & 0x01) << 12;
+                    uint16_t tile = pattern_offset + *(sprite + 1) * 16;
+                    uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
 
-                        if (*(sprite + 2) & 0x80)
-                            y_sprite = 7 - y_sprite;
+                    if (*(sprite + 2) & 0x80)
+                        y_sprite = 7 - y_sprite;
 
-                        // Draw a sprite line on the next line
-                        for (int i = 0; i < 8; i++) {
-                            uint16_t x_offset = x + ((*(sprite + 2) & 0x40) ? 7 - i : i);
-                            uint8_t bits_low = ppu_memory[tile + y_sprite] & (0x80 >> i) ? 0x01 : 0x00;
-                            bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
+                    // Draw a sprite line on the next line
+                    for (int i = 0; i < 8; i++) {
+                        uint16_t x_offset = x + ((*(sprite + 2) & 0x40) ? 7 - i : i);
+                        uint8_t bits_low = ppu_memory[tile + y_sprite] & (0x80 >> i) ? 0x01 : 0x00;
+                        bits_low |= ppu_memory[tile + y_sprite + 8] & (0x80 >> i) ? 0x02 : 0x00;
 
-                            if (x_offset < 256 && (x_offset >= 8 || memory[0x2001] & 0x04) && bits_low != 0) {
-                                framebuffer[(scanline + 1) * 256 + x_offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
+                        if (x_offset < 256 && (x_offset >= 8 || memory[0x2001] & 0x04) && bits_low != 0) {
+                            framebuffer[(scanline + 1) * 256 + x_offset] = palette[ppu_memory[0x3F10 | bits_high | bits_low]];
 
-                                // Mark opaque pixels
+                            // Mark opaque pixels
+                            framebuffer[(scanline + 1) * 256 + x_offset]--;
+                            if (*(sprite + 2) & 0x20) // Sprite is behind the background
                                 framebuffer[(scanline + 1) * 256 + x_offset]--;
-                                if (*(sprite + 2) & 0x20) // Sprite is behind the background
-                                    framebuffer[(scanline + 1) * 256 + x_offset]--;
-                            }
                         }
+                    }
 
-                        sprite_count++;
-                    }
-                    else { // Sprite overflow
-                        memory[0x2002] |= 0x20;
-                    }
+                    sprite_count++;
+                }
+                else { // Sprite overflow
+                    memory[0x2002] |= 0x20;
                 }
             }
         }
-        else if (scanline == 241 && ppu_cycles == 1) { // Start of the V-blank period
-            memory[0x2002] |= 0x80;
-            if (memory[0x2000] & 0x80)
-                interrupts[0] = true;
-        }
-        else if (scanline == 261 && ppu_cycles == 1) { // Pre-render line
-            // Clear the bits for the next frame
-            memory[0x2002] &= ~0xE0;
-        }
+    }
+    else if (scanline == 241 && ppu_cycles == 1) { // Start of the V-blank period
+        memory[0x2002] |= 0x80;
+        if (memory[0x2000] & 0x80)
+            interrupts[0] = true;
+    }
+    else if (scanline == 261 && ppu_cycles == 1) { // Pre-render line
+        // Clear the bits for the next frame
+        memory[0x2002] &= ~0xE0;
+    }
 
-        ppu_cycles++;
+    ppu_cycles++;
 
-        if (ppu_cycles == 341) { // End of a scanline
-            sprite_count = 0;
-            ppu_cycles = 0;
-            target_ppu_cycles -= 341;
-            scanline_cycles = cycles;
-            scanline++;
-        }
+    if (ppu_cycles == 341) { // End of a scanline
+        sprite_count = 0;
+        ppu_cycles = 0;
+        scanline++;
+    }
 
-        if (scanline == 262) { // End of a frame
-            scanline = 0;
+    if (scanline == 262) { // End of a frame
+        scanline = 0;
 
-            // Copy the finished frame to the display
-            memcpy(display, framebuffer, sizeof(display));
+        // Copy the finished frame to the display
+        memcpy(display, framebuffer, sizeof(display));
 
-            // Clear the framebuffer
-            for (int i = 0; i < 256 * 240; i++)
-                framebuffer[i] = palette[ppu_memory[0x3F00]];
+        // Clear the framebuffer
+        for (int i = 0; i < 256 * 240; i++)
+            framebuffer[i] = palette[ppu_memory[0x3F00]];
 
-            // Limit the FPS to 60
-            std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - timer;
-            if (elapsed.count() < 1.0f / 60)
-                usleep((1.0f / 60 - elapsed.count()) * 1000000);
-            timer = std::chrono::steady_clock::now();
-        }
+        // Limit the FPS to 60
+        std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - timer;
+        if (elapsed.count() < 1.0f / 60)
+            usleep((1.0f / 60 - elapsed.count()) * 1000000);
+        timer = std::chrono::steady_clock::now();
     }
 }
 
