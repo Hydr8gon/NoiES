@@ -39,6 +39,9 @@ uint32_t vrom_address;
 uint8_t mapper_type;
 uint8_t mapper_registers[2];
 uint8_t mapper_shift;
+uint8_t irq_counter;
+bool irq_enable;
+bool irq_reload;
 
 uint32_t framebuffer[256 * 240];
 uint32_t display[256 * 240];
@@ -272,11 +275,11 @@ void mapper_write(uint16_t address, uint8_t value) {
                     uint8_t bank = mapper_registers[0] & 0x07;
                     if (bank < 2) { // 2 KB VROM banks
                         fseek(rom, vrom_address + 0x0400 * (value & ~0x01), SEEK_SET);
-                        fread(&ppu_memory[(mapper_registers[0] & 0x80) << 8] + 0x0800 * bank, 1, 0x0800, rom);
+                        fread(&ppu_memory[((mapper_registers[0] & 0x80) << 5) + 0x0800 * bank], 1, 0x0800, rom);
                     }
                     else if (bank >= 2 && bank < 6) { // 1 KB VROM banks
                         fseek(rom, vrom_address + 0x0400 * value, SEEK_SET);
-                        fread(&ppu_memory[0x1000 + 0x0400 * (bank - 2) - ((mapper_registers[0] & 0x80) << 8)], 1, 0x0400, rom);
+                        fread(&ppu_memory[0x1000 + 0x0400 * (bank - 2) - ((mapper_registers[0] & 0x80) << 5)], 1, 0x0400, rom);
                     }
                     else if (bank == 6) { // Swappable/fixed 8 KB ROM bank
                         fseek(rom, rom_address + 0x2000 * value, SEEK_SET);
@@ -287,13 +290,24 @@ void mapper_write(uint16_t address, uint8_t value) {
                         fread(&memory[0xA000], 1, 0x2000, rom);
                     }
                 }
-                // TODO: IRQs
             }
             else if (address >= 0xA000 && address < 0xC000) {
                 if (address % 2 == 0) { // Mirroring
                     if (mirror_type != 4)
                         mirror_type = 2 + value;
                 }
+            }
+            else if (address >= 0xC000 && address < 0xE000) {
+                if (address % 2 == 0) { // IRQ latch
+                    mapper_registers[1] = value;
+                }
+                else { // IRQ reload
+                    irq_counter = 0;
+                    irq_reload = true;
+                }
+            }
+            else { // IRQ enable/disable
+                irq_enable = (address % 2 == 1);
             }
             break;
     }
@@ -904,6 +918,22 @@ void ppu() {
                 else { // Sprite overflow
                     memory[0x2002] |= 0x20;
                 }
+            }
+        }
+
+        // MMC3 IRQ counter
+        if (mapper_type == 4 && ppu_cycles == 260 && memory[0x2001] & 0x08 && memory[0x2001] & 0x10) {
+            if (irq_counter == 0) {
+                // Trigger an IRQ if they're enabled
+                if (irq_enable && !irq_reload)
+                    interrupts[2] = true;
+
+                // Reload the counter
+                irq_counter = mapper_registers[1];
+                irq_reload = false;
+            }
+            else {
+                irq_counter--;
             }
         }
     }
