@@ -356,7 +356,7 @@ void adc(uint8_t value) {
     if (accumulator & 0x80)                                                       se_(0x80); else cl_(0x80); // N
     if (accumulator == 0)                                                         se_(0x02); else cl_(0x02); // Z
     if ((value & 0x80) == (accum_old & 0x80) && (flags & 0x80) != (value & 0x80)) se_(0x40); else cl_(0x40); // V
-    if (accum_old > accumulator)                                                  se_(0x01); else cl_(0x01); // C
+    if (accum_old > accumulator || value + (flags & 0x01) == 0x100)               se_(0x01); else cl_(0x01); // C
 }
 
 // AND: Bitwise and
@@ -564,7 +564,7 @@ void sbc(uint8_t value) {
     if (accumulator & 0x80)                                                       se_(0x80); else cl_(0x80); // N
     if (accumulator == 0)                                                         se_(0x02); else cl_(0x02); // Z
     if ((value & 0x80) != (accum_old & 0x80) && (flags & 0x80) == (value & 0x80)) se_(0x40); else cl_(0x40); // V
-    if (accum_old >= accumulator)                                                 se_(0x01); else cl_(0x01); // C
+    if (accum_old >= accumulator && value + !(flags & 0x01) != 0x100)             se_(0x01); else cl_(0x01); // C
 }
 
 // ST_: Store a register
