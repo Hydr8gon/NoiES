@@ -9,20 +9,16 @@ uint8_t memory[0x10000];
 uint8_t ppu_memory[0x4000];
 uint8_t spr_memory[0x100];
 
-uint32_t cycles;
-uint32_t target_cycles;
+uint32_t cycles, target_cycles;
 uint16_t program_counter;
-uint8_t stack_pointer = 0xFF;
-uint8_t accumulator;
-uint8_t register_x;
-uint8_t register_y;
+uint8_t accumulator, register_x, register_y;
 uint8_t flags = 0x24; // NV_BDIZC
-bool interrupts[3];
+uint8_t stack_pointer = 0xFF;
+bool interrupts[3]; // NMI, RST, BRK
 
 uint32_t ppu_cycles;
 uint16_t scanline;
-uint8_t scroll_x;
-uint8_t scroll_y;
+uint8_t scroll_x, scroll_y;
 uint8_t sprite_count;
 uint8_t mirror_type;
 uint8_t ppu_buffer;
@@ -31,17 +27,13 @@ bool ppu_latch_on;
 
 uint8_t input_shift;
 
-FILE *rom;
-char *save;
-uint32_t rom_address;
-uint32_t rom_address_last;
-uint32_t vrom_address;
 uint8_t mapper_type;
-uint8_t mapper_registers[2];
-uint8_t mapper_shift;
-uint8_t irq_counter;
-bool irq_enable;
-bool irq_reload;
+uint8_t mapper_register, mapper_latch, mapper_shift;
+uint8_t irq_counter, irq_latch;
+bool irq_enable, irq_reload;
+
+FILE *rom, *save;
+uint32_t rom_address, rom_address_last, vrom_address;
 
 uint32_t framebuffer[256 * 240];
 uint32_t display[256 * 240];
@@ -128,7 +120,7 @@ uint8_t *indirect_y(bool page_cycle) {
     return &memory[address + register_y];
 }
 
-// Get a value using immediate addressing
+// Immediate addressing: Get the value immediately after the current address
 uint8_t *immediate() {
     return &memory[++program_counter];
 }
@@ -149,11 +141,8 @@ uint16_t ppu_memory_mirror(uint16_t address) {
         address -= 0x1000;
     else if (address >= 0x3F20 && address < 0x4000)
         address = 0x3F00 + (address - 0x3F20) % 20;
-
-    for (int i = 0; i < 0xC; i += 4) {
-        if (address == 0x3F10 + i)
-            address -= 0x10;
-    }
+    else if (address >= 0x3F10 && address < 0x3F20 && address % 4 == 0)
+        address -= 0x10;
 
     // Nametable mirroring
     switch (mirror_type) {
@@ -188,46 +177,47 @@ uint16_t ppu_memory_mirror(uint16_t address) {
 // Handle writes to mapper registers
 void mapper_write(uint16_t address, uint8_t value) {
     switch (mapper_type) {
-        case 1: // MMC1: Swap 16 KB or 32 KB ROM banks and 4 KB or 8 KB VROM banks, written to 1 byte at a time
+        case 1: // MMC1: Swap 16 KB or 32 KB ROM banks and 4 KB or 8 KB VROM banks
             if (value & 0x80) {
                 // Reset the shift register on a write with bit 7 set
-                mapper_registers[0] |= 0x0C;
+                mapper_latch |= 0x0C;
                 mapper_shift = 0;
             }
             else {
-                mapper_registers[0] |= (value & 0x01) << mapper_shift;
+                // Write one bit to the latch
+                mapper_latch |= (value & 0x01) << mapper_shift;
                 mapper_shift++;
             }
 
             if (mapper_shift == 5) {
                 if (address >= 0x8000 && address < 0xA000) { // Control
-                    mapper_registers[1] = mapper_registers[0];
-                    mirror_type = mapper_registers[0] & 0x03;
+                    mapper_register = mapper_latch;
+                    mirror_type = mapper_latch & 0x03;
                 }
                 else if (address >= 0xA000 && address < 0xC000) { // VROM bank 0
-                    if (mapper_registers[1] & 0x10) { // 4 KB
-                        fseek(rom, vrom_address + 0x1000 * mapper_registers[0], SEEK_SET);
+                    if (mapper_register & 0x10) { // 4 KB
+                        fseek(rom, vrom_address + 0x1000 * mapper_latch, SEEK_SET);
                         fread(ppu_memory, 1, 0x1000, rom);
                     }
                     else { // 8 KB
-                        fseek(rom, vrom_address + 0x1000 * (mapper_registers[0] & ~0x01), SEEK_SET);
+                        fseek(rom, vrom_address + 0x1000 * (mapper_latch & ~0x01), SEEK_SET);
                         fread(ppu_memory, 1, 0x2000, rom);
                     }
                 }
                 else if (address >= 0xC000 && address < 0xE000) { // VROM bank 1
-                    if (mapper_registers[1] & 0x10) { // 4 KB
-                        fseek(rom, vrom_address + 0x1000 * mapper_registers[0], SEEK_SET);
+                    if (mapper_register & 0x10) { // 4 KB
+                        fseek(rom, vrom_address + 0x1000 * mapper_latch, SEEK_SET);
                         fread(&ppu_memory[0x1000], 1, 0x1000, rom);
                     }
                 }
                 else { // ROM banks
-                    if (mapper_registers[1] & 0x04) { // ROM bank 1 is fixed
-                        if (mapper_registers[1] & 0x08) { // 16 KB
-                            fseek(rom, rom_address + 0x4000 * mapper_registers[0], SEEK_SET);
+                    if (mapper_register & 0x04) { // ROM bank 1 is fixed
+                        if (mapper_register & 0x08) { // 16 KB
+                            fseek(rom, rom_address + 0x4000 * mapper_latch, SEEK_SET);
                             fread(&memory[0x8000], 1, 0x4000, rom);
                         }
                         else { // 32 KB
-                            fseek(rom, rom_address + 0x4000 * (mapper_registers[0] & 0x0E), SEEK_SET);
+                            fseek(rom, rom_address + 0x4000 * (mapper_latch & 0x0E), SEEK_SET);
                             fread(&memory[0x8000], 1, 0x8000, rom);
                         }
 
@@ -235,12 +225,12 @@ void mapper_write(uint16_t address, uint8_t value) {
                         fread(&memory[0xC000], 1, 0x4000, rom);
                     }
                     else { // ROM bank 0 is fixed
-                        if (mapper_registers[1] & 0x08) { // 16 KB
-                            fseek(rom, rom_address + 0x4000 * mapper_registers[0], SEEK_SET);
+                        if (mapper_register & 0x08) { // 16 KB
+                            fseek(rom, rom_address + 0x4000 * mapper_latch, SEEK_SET);
                             fread(&memory[0xC000], 1, 0x4000, rom);
                         }
                         else { // 32 KB
-                            fseek(rom, rom_address + 0x4000 * (mapper_registers[0] & 0x0E), SEEK_SET);
+                            fseek(rom, rom_address + 0x4000 * (mapper_latch & 0x0E), SEEK_SET);
                             fread(&memory[0x8000], 1, 0x8000, rom);
                         }
 
@@ -249,9 +239,10 @@ void mapper_write(uint16_t address, uint8_t value) {
                     }
                 }
 
-                mapper_registers[0] = 0;
+                mapper_latch = 0;
                 mapper_shift = 0;
             }
+
             break;
 
         case 2: // UNROM: Swap the first ROM bank only
@@ -267,23 +258,23 @@ void mapper_write(uint16_t address, uint8_t value) {
         case 4: // MMC3: Swap 8 KB ROM banks and 1 KB or 2 KB VROM banks
             if (address >= 0x8000 && address < 0xA000) {
                 if (address % 2 == 0) { // Bank select
-                    mapper_registers[0] = value;
+                    mapper_register = value;
                     fseek(rom, rom_address_last, SEEK_SET);
                     fread(&memory[(value & 0x40) ? 0x8000 : 0xC000], 1, 0x2000, rom);
                 }
                 else { // Bank data
-                    uint8_t bank = mapper_registers[0] & 0x07;
+                    uint8_t bank = mapper_register & 0x07;
                     if (bank < 2) { // 2 KB VROM banks
                         fseek(rom, vrom_address + 0x0400 * (value & ~0x01), SEEK_SET);
-                        fread(&ppu_memory[((mapper_registers[0] & 0x80) << 5) + 0x0800 * bank], 1, 0x0800, rom);
+                        fread(&ppu_memory[((mapper_register & 0x80) << 5) + 0x0800 * bank], 1, 0x0800, rom);
                     }
                     else if (bank >= 2 && bank < 6) { // 1 KB VROM banks
                         fseek(rom, vrom_address + 0x0400 * value, SEEK_SET);
-                        fread(&ppu_memory[0x1000 + 0x0400 * (bank - 2) - ((mapper_registers[0] & 0x80) << 5)], 1, 0x0400, rom);
+                        fread(&ppu_memory[(!(mapper_register & 0x80) << 12) + 0x0400 * (bank - 2)], 1, 0x0400, rom);
                     }
                     else if (bank == 6) { // Swappable/fixed 8 KB ROM bank
                         fseek(rom, rom_address + 0x2000 * value, SEEK_SET);
-                        fread(&memory[(mapper_registers[0] & 0x40) ? 0xC000 : 0x8000], 1, 0x2000, rom);
+                        fread(&memory[(mapper_register & 0x40) ? 0xC000 : 0x8000], 1, 0x2000, rom);
                     }
                     else { // Swappable 8 KB ROM bank
                         fseek(rom, rom_address + 0x2000 * value, SEEK_SET);
@@ -299,14 +290,14 @@ void mapper_write(uint16_t address, uint8_t value) {
             }
             else if (address >= 0xC000 && address < 0xE000) {
                 if (address % 2 == 0) { // IRQ latch
-                    mapper_registers[1] = value;
+                    irq_latch = value;
                 }
                 else { // IRQ reload
                     irq_counter = 0;
                     irq_reload = true;
                 }
             }
-            else { // IRQ enable/disable
+            else { // IRQ toggle
                 irq_enable = (address % 2 == 1);
             }
             break;
@@ -328,11 +319,6 @@ void ph_(uint8_t value) {
     memory[0x0100 + stack_pointer--] = value;
 }
 
-// PHP: Push the flags to the stack
-void php() {
-    ph_(flags | 0x10);
-}
-
 // PLA: Pull the accumulator from the stack
 void pla() {
     accumulator = memory[0x0100 + ++stack_pointer];
@@ -344,6 +330,7 @@ void pla() {
 // PLP: Pull the flags from the stack
 void plp() {
     flags = memory[0x0100 + ++stack_pointer];
+
     se_(0x20);
     cl_(0x10);
 }
@@ -817,7 +804,7 @@ void cpu() {
         case 0xBA: t__(&stack_pointer, &register_x); target_cycles += 6;  break; // TSX
         case 0x48: ph_(accumulator);                 target_cycles += 9;  break; // PHA
         case 0x68: pla();                            target_cycles += 12; break; // PLA
-        case 0x08: php();                            target_cycles += 9;  break; // PHP
+        case 0x08: ph_(flags | 0x10);                target_cycles += 9;  break; // PHP
         case 0x28: plp();                            target_cycles += 12; break; // PLP
 
         case 0x86: st_(register_x, zero_page());   target_cycles += 9;  break; // STX zero page
@@ -845,14 +832,15 @@ void ppu() {
             uint16_t table_offset = 0x2000 + (memory[0x2000] & 0x03) * 0x0400;
             uint16_t pattern_offset = (memory[0x2000] & 0x10) << 8;
 
-            // Change nametable based on scroll offset
-            if (x_offset >= 256)
+            // Change nametable based on the scroll offset
+            if (x_offset >= 256) {
                 table_offset += 0x0400;
-            if (y_offset >= 240)
+                x_offset %= 256;
+            }
+            if (y_offset >= 240) {
                 table_offset += 0x0800;
-
-            x_offset %= 256;
-            y_offset %= 240;
+                y_offset %= 240;
+            }
             table_offset = ppu_memory_mirror(table_offset);
 
             uint16_t tile = pattern_offset + ppu_memory[table_offset + (y_offset / 8) * 32 + x_offset / 8] * 16;
@@ -871,10 +859,12 @@ void ppu() {
                 bits_high = (bits_high & 0xC0) >> 4;
 
             if ((x >= 8 || memory[0x2001] & 0x02) && bits_low != 0) {
-                uint8_t type = framebuffer[scanline * 256 + x] & 0xFF;
+                uint8_t type = framebuffer[scanline * 256 + x];
+                uint8_t spr0_x = spr_memory[0];
+                uint8_t spr0_y = spr_memory[3];
 
                 // Check for a sprite 0 hit
-                if (x < 255 && spr_memory[0] <= scanline + 1 && spr_memory[0] + 9 > scanline && spr_memory[3] <= x && spr_memory[3] + 8 > x && type != 0xFF)
+                if (x < 255 && spr0_x <= scanline + 1 && spr0_x + 9 > scanline && spr0_y <= x && spr0_y + 8 > x && type != 0xFF)
                     memory[0x2002] |= 0x40;
 
                 // Draw a pixel
@@ -929,7 +919,7 @@ void ppu() {
                     interrupts[2] = true;
 
                 // Reload the counter
-                irq_counter = mapper_registers[1];
+                irq_counter = irq_latch;
                 irq_reload = false;
             }
             else {
@@ -1002,17 +992,14 @@ bool start(char *filename) {
         return false;
     }
 
-    // Load a savefile into memory
+    // Load a savefile if the ROM supports it
     if (header[6] & 0x02) {
-        save = new char[strlen(filename)];
         char *ext = (char*)"sav";
-        strcpy(save, filename);
-        memcpy(&save[strlen(save) - 3], ext, 3);
-        FILE *savefile = fopen(save, "rb");
-        if (savefile) {
-            fread(&memory[0x6000], 1, 0x2000, savefile);
-            fclose(savefile);
-        }
+        memcpy(&filename[strlen(filename) - 3], ext, 3);
+        save = fopen(filename, "rb");
+        if (save)
+            fread(&memory[0x6000], 1, 0x2000, save);
+        save = fopen(filename, "wb");
     }
 
     // Load the ROM trainer into memory
@@ -1041,7 +1028,7 @@ bool start(char *filename) {
             fseek(rom, (header[4] - 2) * 0x4000, SEEK_CUR);
             rom_address_last = ftell(rom);
             fread(&memory[0xC000], 1, 0x4000, rom);
-            mapper_registers[1] = 0x04;
+            mapper_register = 0x04;
             break;
 
         default:
@@ -1063,12 +1050,10 @@ bool start(char *filename) {
 }
 
 void stop() {
-    // Write a savefile
+    // Write the savefile
     if (save) {
-        FILE *savefile = fopen(save, "wb");
-        fwrite(&memory[0x6000], 1, 0x2000, savefile);
-        fclose(savefile);
-        delete[] save;
+        fwrite(&memory[0x6000], 1, 0x2000, save);
+        fclose(save);
     }
 
     fclose(rom);
