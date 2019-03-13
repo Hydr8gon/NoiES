@@ -880,8 +880,8 @@ void ppu() {
                 if (sprite_count < 8) {
                     uint8_t x = *(sprite + 3);
                     uint8_t y_sprite = ((scanline - *sprite) / 8) * 16 + (scanline - *sprite) % 8;
-                    uint16_t pattern_offset = (height == 8) ? (memory[0x2000] & 0x08) << 1 : (*(sprite + 1) & 0x01) << 12;
-                    uint16_t tile = pattern_offset + *(sprite + 1) * 16;
+                    uint16_t pattern_offset = (height == 8) ? (memory[0x2000] & 0x08) << 9 : (*(sprite + 1) & 0x01) << 12;
+                    uint16_t tile = pattern_offset + (*(sprite + 1) & (height == 8 ? ~0x00 : ~0x01)) * 16;
                     uint8_t bits_high = (*(sprite + 2) & 0x03) << 2;
 
                     if (*(sprite + 2) & 0x80)
