@@ -860,15 +860,13 @@ void ppu() {
 
             if ((x >= 8 || memory[0x2001] & 0x02) && bits_low != 0) {
                 uint8_t type = framebuffer[scanline * 256 + x];
-                uint8_t spr0_x = spr_memory[0];
-                uint8_t spr0_y = spr_memory[3];
 
                 // Check for a sprite 0 hit
-                if (x < 255 && spr0_x <= scanline + 1 && spr0_x + 9 > scanline && spr0_y <= x && spr0_y + 8 > x && type != 0xFF)
+                if (type < 0xFD)
                     memory[0x2002] |= 0x40;
 
                 // Draw a pixel
-                if (type != 0xFE)
+                if (type % 2 == 1)
                     framebuffer[scanline * 256 + x] = palette[ppu_memory[0x3F00 | bits_high | bits_low]];
             }
         }
@@ -900,6 +898,8 @@ void ppu() {
                             framebuffer[(scanline + 1) * 256 + x_offset]--;
                             if (*(sprite + 2) & 0x20) // Sprite is behind the background
                                 framebuffer[(scanline + 1) * 256 + x_offset]--;
+                            if (ppu_cycles == 257) // Sprite 0
+                                framebuffer[(scanline + 1) * 256 + x_offset] -= 2;
                         }
                     }
 
