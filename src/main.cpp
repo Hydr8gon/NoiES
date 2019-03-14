@@ -29,8 +29,8 @@ bool ppu_latch_on;
 uint8_t input_shift;
 
 uint16_t apu_timers[2];
-uint8_t duty_cycles[2];
 uint16_t pulses[2];
+uint8_t duty_cycles[2];
 int16_t wavelengths[2];
 
 uint8_t mapper_type;
@@ -975,7 +975,7 @@ void apu() {
         for (int i = 0; i < 2; i++) {
             if (apu_timers[i] == 0) {
                 apu_timers[i] = pulses[i] = ((memory[0x4003 + 4 * i] & 0x03) << 8) | memory[0x4002 + 4 * i];
-                duty_cycles[i] = (memory[0x4004] & 0xC0) >> 6;
+                duty_cycles[i] = (memory[0x4004 + 4 * i] & 0xC0) >> 6;
             }
             else {
                 apu_timers[i]--;
@@ -1092,7 +1092,7 @@ int16_t audio_mixer() {
             (duty_cycles[i] == 1 && wavelengths[i] <  pulses[i] / 4) ||
             (duty_cycles[i] == 2 && wavelengths[i] <  pulses[i] / 2) ||
             (duty_cycles[i] == 3 && wavelengths[i] >= pulses[i] / 4))
-            out += 0x400;
+            out += 0x200 * (memory[0x4000 + 4 * i] & 0x0F);
 
             if(wavelengths[i] >= pulses[i])
                 wavelengths[i] = 0;
