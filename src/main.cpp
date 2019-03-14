@@ -4,6 +4,7 @@
 #include <thread>
 #include <unistd.h>
 #include "GL/glut.h"
+#include "portaudio.h"
 
 uint8_t memory[0x10000];
 uint8_t ppu_memory[0x4000];
@@ -26,6 +27,11 @@ uint8_t ppu_latch;
 bool ppu_latch_on;
 
 uint8_t input_shift;
+
+uint16_t apu_timers[2];
+uint8_t duty_cycles[2];
+uint16_t pulses[2];
+int16_t wavelengths[2];
 
 uint8_t mapper_type;
 uint8_t mapper_register, mapper_latch, mapper_shift;
@@ -963,10 +969,26 @@ void ppu() {
     }
 }
 
+void apu() {
+    if (cycles % 6 == 0) { // Every other CPU cycle
+        // Decrement and reload the pulse channel timers
+        for (int i = 0; i < 2; i++) {
+            if (apu_timers[i] == 0) {
+                apu_timers[i] = pulses[i] = ((memory[0x4003 + 4 * i] & 0x03) << 8) | memory[0x4002 + 4 * i];
+                duty_cycles[i] = (memory[0x4004] & 0xC0) >> 6;
+            }
+            else {
+                apu_timers[i]--;
+            }
+        }
+    }
+}
+
 void run() {
     while (true) {
         cpu();
         ppu();
+        apu();
     }
 }
 
@@ -1059,6 +1081,26 @@ void stop() {
     fclose(rom);
 }
 
+int16_t audio_mixer() {
+    int16_t out = 0;
+
+    // Generate the pulse waves
+    for (int i = 0; i < 2; i++) {
+        wavelengths[i] += 2;
+
+        if ((duty_cycles[i] == 0 && wavelengths[i] <  pulses[i] / 8) ||
+            (duty_cycles[i] == 1 && wavelengths[i] <  pulses[i] / 4) ||
+            (duty_cycles[i] == 2 && wavelengths[i] <  pulses[i] / 2) ||
+            (duty_cycles[i] == 3 && wavelengths[i] >= pulses[i] / 4))
+            out += 0x400;
+
+            if(wavelengths[i] >= pulses[i])
+                wavelengths[i] = 0;
+    }
+
+    return out;
+}
+
 void draw() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, display);
     glBegin(GL_QUADS);
@@ -1085,6 +1127,14 @@ void key_up(unsigned char key, int x, int y) {
     }
 }
 
+int audio_callback(const void *in, void *out, unsigned long frames,
+                   const PaStreamCallbackTimeInfo *info, PaStreamCallbackFlags flags, void *data) {
+    int16_t *out_cur = (int16_t*)out;
+    for (int i = 0; i < frames; i++)
+        *out_cur++ = audio_mixer();
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         printf("Please specify a ROM to load.\n");
@@ -1104,6 +1154,11 @@ int main(int argc, char **argv) {
     glBindTexture(GL_TEXTURE_2D, texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    PaStream *stream;
+    Pa_Initialize();
+    Pa_OpenDefaultStream(&stream, 0, 1, paInt16, 44100, 256, audio_callback, NULL);
+    Pa_StartStream(stream);
 
     atexit(stop);
     glutDisplayFunc(draw);

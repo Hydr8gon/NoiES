@@ -1,5 +1,5 @@
 all:
-	g++ -lpthread -lglut -lGL -o noies src/main.cpp
+	g++ -lpthread -lglut -lGL -lportaudio -o noies src/main.cpp
 
 clean:
-	rm noies
+	rm -f noies
