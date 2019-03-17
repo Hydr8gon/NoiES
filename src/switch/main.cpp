@@ -136,6 +136,8 @@ int main(int argc, char **argv)
         refreshDisplay();
     }
 
+    closeRom();
+
     pcvSetClockRate(PcvModule_Cpu, 1020000000);
     pcvExit();
     audoutStopAudioOut();

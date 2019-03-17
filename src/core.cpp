@@ -1133,6 +1133,7 @@ bool loadRom(char *filename)
         save = fopen(filename, "rb");
         if (save)
             fread(&cpuMemory[0x6000], 1, 0x2000, save);
+        fclose(save);
         save = fopen(filename, "wb");
     }
 
