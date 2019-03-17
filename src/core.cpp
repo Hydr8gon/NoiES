@@ -40,7 +40,7 @@ FILE *rom, *save;
 uint32_t romAddress, romAddressLast, vromAddress;
 
 uint32_t framebuffer[256 * 240];
-uint32_t display[256 * 240];
+uint32_t displayBuffer[256 * 240];
 std::chrono::steady_clock::time_point timer;
 
 const uint32_t palette[] =
@@ -1054,7 +1054,7 @@ void ppu()
         scanline = 0;
 
         // Copy the finished frame to the display
-        memcpy(display, framebuffer, sizeof(display));
+        memcpy(displayBuffer, framebuffer, sizeof(displayBuffer));
 
         // Clear the framebuffer
         for (int i = 0; i < 256 * 240; i++)
@@ -1193,14 +1193,14 @@ void runCycle()
     apu();
 }
 
-int16_t audioSample()
+int16_t audioSample(uint8_t pitch)
 {
     int16_t out = 0;
 
     // Generate the pulse waves
     for (int i = 0; i < 2; i++)
     {
-        wavelengths[i] += 2;
+        wavelengths[i] += pitch;
 
         if ((dutyCycles[i] == 0 && wavelengths[i] <  pulses[i] / 8) ||
             (dutyCycles[i] == 1 && wavelengths[i] <  pulses[i] / 4) ||
@@ -1208,8 +1208,8 @@ int16_t audioSample()
             (dutyCycles[i] == 3 && wavelengths[i] >= pulses[i] / 4))
             out += 0x200 * volumes[i];
 
-            if (wavelengths[i] >= pulses[i])
-                wavelengths[i] = 0;
+        if (wavelengths[i] >= pulses[i])
+            wavelengths[i] = 0;
     }
 
     return out;

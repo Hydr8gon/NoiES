@@ -14,7 +14,7 @@ void runCore()
 
 void draw()
 {
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, display);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, displayBuffer);
     glBegin(GL_QUADS);
     glTexCoord2i(1, 1); glVertex2f( 1, -1);
     glTexCoord2i(0, 1); glVertex2f(-1, -1);
@@ -48,7 +48,7 @@ int audioCallback(const void *in, void *out, unsigned long frames,
 {
     int16_t *curOut = (int16_t*)out;
     for (int i = 0; i < frames; i++)
-        *curOut++ = audioSample();
+        *curOut++ = audioSample(2);
     return 0;
 }
 
