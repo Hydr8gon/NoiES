@@ -978,7 +978,11 @@ void ppu()
                     uint8_t highBits = (*(sprite + 2) & 0x03) << 2;
 
                     if (*(sprite + 2) & 0x80)
-                        spriteY = 7 - spriteY;
+                    {
+                        if (height == 16 && spriteY < 8)
+                            tile += 16;
+                        spriteY = 7 - (spriteY % 8);
+                    }
 
                     // Draw a sprite line on the next line
                     for (int i = 0; i < 8; i++)
