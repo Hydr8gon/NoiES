@@ -993,12 +993,16 @@ void ppu()
 
                         if (xOffset < 256 && (xOffset >= 8 || cpuMemory[0x2001] & 0x04) && lowBits != 0)
                         {
-                            framebuffer[(scanline + 1) * 256 + xOffset] = palette[ppuMemory[0x3F10 | highBits | lowBits]];
+                            uint8_t type = framebuffer[(scanline + 1) * 256 + xOffset];
+                            if (type == 0xFF)
+                            {
+                                framebuffer[(scanline + 1) * 256 + xOffset] = palette[ppuMemory[0x3F10 | highBits | lowBits]];
 
-                            // Mark opaque pixels
-                            framebuffer[(scanline + 1) * 256 + xOffset]--;
-                            if (*(sprite + 2) & 0x20) // Sprite is behind the background
+                                // Mark opaque pixels
                                 framebuffer[(scanline + 1) * 256 + xOffset]--;
+                                if (*(sprite + 2) & 0x20) // Sprite is behind the background
+                                    framebuffer[(scanline + 1) * 256 + xOffset]--;
+                            }
                             if (ppuCycles == 257) // Sprite 0
                                 framebuffer[(scanline + 1) * 256 + xOffset] -= 2;
                         }
@@ -1085,7 +1089,7 @@ void apu()
                 dutyCycles[i] = (cpuMemory[0x4004 + 4 * i] & 0xC0) >> 6;
                 volumes[i] = (cpuMemory[0x4000 + 4 * i] & 0x10) ? (cpuMemory[0x4000 + 4 * i] & 0x0F) : 7;
 
-                if (pulses[i] < 8)
+                if (pulses[i] < 8 || !(cpuMemory[0x4015] & ( 1 << i)))
                     pulses[i] = 0;
             }
             else
