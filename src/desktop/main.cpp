@@ -48,7 +48,7 @@ int audioCallback(const void *in, void *out, unsigned long frames,
 {
     int16_t *curOut = (int16_t*)out;
     for (int i = 0; i < frames; i++)
-        *curOut++ = audioSample(2);
+        *curOut++ = audioSample(2.6f);
     return 0;
 }
 

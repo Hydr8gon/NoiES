@@ -9,7 +9,7 @@ bool loadRom(char *filename);
 void closeRom();
 
 void runCycle();
-int16_t audioSample(uint8_t pitch);
+int16_t audioSample(float pitch);
 
 void pressKey(uint8_t key);
 void releaseKey(uint8_t key);

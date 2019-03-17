@@ -29,7 +29,7 @@ uint16_t apuTimers[2];
 uint16_t pulses[2];
 uint8_t dutyCycles[2];
 uint8_t volumes[2];
-int16_t wavelengths[2];
+float wavelengths[2];
 
 uint8_t mapperType;
 uint8_t mapperRegister, mapperLatch, mapperShift;
@@ -1084,6 +1084,9 @@ void apu()
                 apuTimers[i] = pulses[i] = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
                 dutyCycles[i] = (cpuMemory[0x4004 + 4 * i] & 0xC0) >> 6;
                 volumes[i] = (cpuMemory[0x4000 + 4 * i] & 0x10) ? (cpuMemory[0x4000 + 4 * i] & 0x0F) : 7;
+
+                if (pulses[i] < 8)
+                    pulses[i] = 0;
             }
             else
             {
@@ -1197,7 +1200,7 @@ void runCycle()
     apu();
 }
 
-int16_t audioSample(uint8_t pitch)
+int16_t audioSample(float pitch)
 {
     int16_t out = 0;
 
