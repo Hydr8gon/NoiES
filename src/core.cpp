@@ -1086,63 +1086,64 @@ void ppu()
 
 void apu()
 {
-    if (cycles % 6 == 0) // APU cycle (2 CPU cycles)
+    // Run on every APU cycle (2 CPU cycles)
+    if (cycles % 6 != 0)
+        return;
+
+    // Advance the frame counter
+    frameCounter++;
+    if (frameCounter == 3729 || frameCounter == 7457 || frameCounter == 11186 ||
+       (!(cpuMemory[0x4017] & 0x80) && frameCounter == 14915) || frameCounter == 18641)
     {
-        // Advance the frame counter
-        frameCounter++;
-        if (frameCounter == 3729 || frameCounter == 7457 || frameCounter == 11186 ||
-           (!(cpuMemory[0x4017] & 0x80) && frameCounter == 14915) || frameCounter == 18641)
-        {
-            for (int i = 0; i < 2; i++)
-            {
-                if (envelopeFlags[i])
-                {
-                    // Reload the envelope values
-                    envelopeFlags[i] = false;
-                    envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
-                    envelopeDecays[i] = 0x0F;
-                }
-                else
-                {
-                    // Clock the dividers
-                    if (envelopeDividers[i] == 0)
-                    {
-                        envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
-                        if (envelopeDecays[i] != 0)
-                            envelopeDecays[i]--;
-                        else if (cpuMemory[0x4000 + 4 * i] & 0x20) // Loop flag
-                            envelopeDecays[i] = 0x0F;
-                    }
-                    else
-                    {
-                        envelopeDividers[i]--;
-                    }
-                }
-
-                if (frameCounter == 14915 || frameCounter == 18641)
-                    frameCounter = 0;
-            }
-        }
-
-        // Clock the pulse channel timers
         for (int i = 0; i < 2; i++)
         {
-            if (apuTimers[i] == 0)
+            if (envelopeFlags[i])
             {
-                apuTimers[i] = pulses[i] = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
-                dutyCycles[i] = (cpuMemory[0x4000 + 4 * i] & 0xC0) >> 6;
-                if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
-                    volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
-                else
-                    volumes[i] = envelopeDecays[i];
-
-                if (pulses[i] < 8 || !(cpuMemory[0x4015] & (1 << i)))
-                    pulses[i] = 0;
+                // Reload the envelope values
+                envelopeFlags[i] = false;
+                envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
+                envelopeDecays[i] = 0x0F;
             }
             else
             {
-                apuTimers[i]--;
+                // Clock the dividers
+                if (envelopeDividers[i] == 0)
+                {
+                    envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
+                    if (envelopeDecays[i] != 0)
+                        envelopeDecays[i]--;
+                    else if (cpuMemory[0x4000 + 4 * i] & 0x20) // Loop flag
+                        envelopeDecays[i] = 0x0F;
+                }
+                else
+                {
+                    envelopeDividers[i]--;
+                }
             }
+
+            if (frameCounter == 14915 || frameCounter == 18641)
+                frameCounter = 0;
+        }
+    }
+
+    // Clock the pulse channel timers
+    for (int i = 0; i < 2; i++)
+    {
+        if (apuTimers[i] == 0)
+        {
+            apuTimers[i] = pulses[i] = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
+            dutyCycles[i] = (cpuMemory[0x4000 + 4 * i] & 0xC0) >> 6;
+            if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
+                volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
+            else
+                volumes[i] = envelopeDecays[i];
+
+            if (pulses[i] < 8 || !(cpuMemory[0x4015] & (1 << i)))
+                pulses[i] = 0;
+        }
+        else
+        {
+            apuTimers[i]--;
         }
     }
 }

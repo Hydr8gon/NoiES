@@ -40,7 +40,7 @@ void audioOutput(void *args)
     while (true)
     {
         for (int i = 0; i < outSamples; i++)
-            ((s16*)audioBuffer.buffer)[i] = audioSample(1.0f);
+            ((s16*)audioBuffer.buffer)[i] = audioSample(1.15f);
         audoutPlayBuffer(&audioBuffer, &audioReleasedBuffer);
     }
 }
