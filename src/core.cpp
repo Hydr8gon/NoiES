@@ -25,11 +25,13 @@ bool ppuLatchOn;
 
 uint8_t inputShift;
 
+uint16_t frameCounter;
 uint16_t apuTimers[2];
 uint16_t pulses[2];
 uint8_t dutyCycles[2];
 uint8_t volumes[2];
-float wavelengths[2];
+uint8_t envelopeDividers[2];
+bool envelopeFlags[2];
 
 uint8_t mapperType;
 uint8_t mapperRegister, mapperLatch, mapperShift;
@@ -41,6 +43,7 @@ uint32_t romAddress, romAddressLast, vromAddress;
 
 uint32_t framebuffer[256 * 240];
 uint32_t displayBuffer[256 * 240];
+float wavelengths[2];
 std::chrono::steady_clock::time_point timer;
 
 const uint32_t palette[] =
@@ -509,7 +512,7 @@ void ld_(uint8_t *reg, uint8_t *value)
     if (*reg & 0x80) se_(0x80); else cl_(0x80); // N
     if (*reg == 0)   se_(0x02); else cl_(0x02); // Z
 
-    // Handle I/O and PPU registers
+    // Handle memory-mapped registers
     switch (address)
     {
         case 0x4016: // JOYPAD1: Read button status 1 bit at a time
@@ -641,9 +644,13 @@ void st_(uint8_t reg, uint8_t *dst)
     else if (address != 0x2002 && address != 0x4016)
         cpuMemory[address] = reg;
 
-    // Handle PPU registers
+    // Handle memory-mapped registers
     switch (address)
     {
+        case 0x4003: case 0x4007: // APU channel loads
+            envelopeFlags[(address - 0x4003) / 4] = true;
+            break;
+
         case 0x4014: // OAMDMA: DMA transfer to sprite memory
             memcpy(sprMemory, &cpuMemory[cpuMemory[0x4014] * 0x100], 0x100);
             targetCycles += ((targetCycles / 3) % 2) ? 1542 : 1539;
@@ -1078,18 +1085,55 @@ void ppu()
 
 void apu()
 {
-    if (cycles % 6 == 0) // Every other CPU cycle
+    if (cycles % 6 == 0) // APU cycle (2 CPU cycles)
     {
-        // Decrement and reload the pulse channel timers
+        // Advance the frame counter
+        frameCounter++;
+        if (frameCounter == 3729 || frameCounter == 7457 || frameCounter == 11186 ||
+           (!(cpuMemory[0x4017] & 0x80) && frameCounter == 14915) || frameCounter == 18641)
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                if (envelopeFlags[i])
+                {
+                    // Reload the envelope values
+                    envelopeFlags[i] = false;
+                    envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
+                    volumes[i] = 0x0F;
+                }
+                else
+                {
+                    // Clock the dividers
+                    if (envelopeDividers[i] == 0)
+                    {
+                        envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
+                        if (volumes[i] != 0)
+                            volumes[i]--;
+                        else if (cpuMemory[0x4000 + 4 * i] & 0x20) // Loop flag
+                            volumes[i] = 0x0F;
+                    }
+                    else
+                    {
+                        envelopeDividers[i]--;
+                    }
+                }
+
+                if (frameCounter == 14915 || frameCounter == 18641)
+                    frameCounter = 0;
+            }
+        }
+
+        // Clock the pulse channel timers
         for (int i = 0; i < 2; i++)
         {
             if (apuTimers[i] == 0)
             {
                 apuTimers[i] = pulses[i] = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
                 dutyCycles[i] = (cpuMemory[0x4004 + 4 * i] & 0xC0) >> 6;
-                volumes[i] = (cpuMemory[0x4000 + 4 * i] & 0x10) ? (cpuMemory[0x4000 + 4 * i] & 0x0F) : 7;
+                if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
+                    volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
 
-                if (pulses[i] < 8 || !(cpuMemory[0x4015] & ( 1 << i)))
+                if (pulses[i] < 8 || !(cpuMemory[0x4015] & (1 << i)))
                     pulses[i] = 0;
             }
             else
