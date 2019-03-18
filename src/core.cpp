@@ -31,6 +31,7 @@ uint16_t pulses[2];
 uint8_t dutyCycles[2];
 uint8_t volumes[2];
 uint8_t envelopeDividers[2];
+uint8_t envelopeDecays[2];
 bool envelopeFlags[2];
 
 uint8_t mapperType;
@@ -1099,7 +1100,7 @@ void apu()
                     // Reload the envelope values
                     envelopeFlags[i] = false;
                     envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
-                    volumes[i] = 0x0F;
+                    envelopeDecays[i] = 0x0F;
                 }
                 else
                 {
@@ -1107,10 +1108,10 @@ void apu()
                     if (envelopeDividers[i] == 0)
                     {
                         envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
-                        if (volumes[i] != 0)
-                            volumes[i]--;
+                        if (envelopeDecays[i] != 0)
+                            envelopeDecays[i]--;
                         else if (cpuMemory[0x4000 + 4 * i] & 0x20) // Loop flag
-                            volumes[i] = 0x0F;
+                            envelopeDecays[i] = 0x0F;
                     }
                     else
                     {
@@ -1132,6 +1133,8 @@ void apu()
                 dutyCycles[i] = (cpuMemory[0x4004 + 4 * i] & 0xC0) >> 6;
                 if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
                     volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
+                else
+                    volumes[i] = envelopeDecays[i];
 
                 if (pulses[i] < 8 || !(cpuMemory[0x4015] & (1 << i)))
                     pulses[i] = 0;
