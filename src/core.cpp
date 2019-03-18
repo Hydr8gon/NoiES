@@ -1130,7 +1130,7 @@ void apu()
             if (apuTimers[i] == 0)
             {
                 apuTimers[i] = pulses[i] = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
-                dutyCycles[i] = (cpuMemory[0x4004 + 4 * i] & 0xC0) >> 6;
+                dutyCycles[i] = (cpuMemory[0x4000 + 4 * i] & 0xC0) >> 6;
                 if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
                     volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
                 else
