@@ -940,22 +940,9 @@ void ppu()
         {
             uint8_t x = scanlineCycles - 1;
             uint8_t y = scanline;
-            uint16_t xOffset = x + ((ppuAddress & 0x001F) << 3) + scrollX;
-            uint16_t yOffset = y + ((ppuAddress & 0x03E0) >> 2) + (ppuAddress >> 12);
-            uint16_t tableOffset = 0x2000 | (ppuAddress & 0x0C00);
-
-            // Change nametable based on the scroll offset
-            if (xOffset >= 256)
-            {
-                tableOffset ^= 0x0400;
-                xOffset %= 256;
-            }
-            if (yOffset >= 240)
-            {
-                tableOffset ^= 0x0800;
-                yOffset %= 240;
-            }
-            tableOffset = ppuMemoryMirror(tableOffset);
+            uint16_t xOffset = ((x % 8) + ((ppuAddress & 0x001F) << 3) + scrollX) % 256;
+            uint16_t yOffset = ((ppuAddress & 0x03E0) >> 2) + (ppuAddress >> 12);
+            uint16_t tableOffset = ppuMemoryMirror(0x2000 | (ppuAddress & 0x0C00));
 
             // Get the lower 2 bits of the palette index
             uint16_t patternOffset = (cpuMemory[0x2000] & 0x10) << 8;
@@ -985,6 +972,31 @@ void ppu()
                 // Draw a pixel
                 if (type % 2 == 1)
                     framebuffer[y * 256 + x] = palette[ppuMemory[0x3F00 | upperBits | lowerBits]];
+            }
+
+            // Increment the X coordinate every tile
+            if (scanlineCycles % 8 == 0)
+            {
+                if ((ppuAddress & 0x001F) == 0x001F)
+                    ppuAddress = (ppuAddress & ~0x001F) ^ 0x0400;
+                else
+                    ppuAddress++;
+            }
+
+            // Increment the Y coordinate at the end of the scanline
+            if (scanlineCycles == 256)
+            {
+                if ((ppuAddress & 0x7000) == 0x7000)
+                {
+                    if ((ppuAddress & 0x03E0) == 0x03A0)
+                        ppuAddress = (ppuAddress & ~0x73E0) ^ 0x0800;
+                    else
+                        ppuAddress = (ppuAddress & ~0x73E0) | ((ppuAddress + 0x0020) & 0x03E0);
+                }
+                else
+                {
+                    ppuAddress += 0x1000;
+                }
             }
         }
         else if (scanlineCycles >= 257 && scanlineCycles <= 320 && cpuMemory[0x2001] & 0x10) // Sprite drawing
@@ -1077,7 +1089,7 @@ void ppu()
     }
     else if (scanline == 261) // Pre-render line
     {
-        // Clear the bits for the next frame and set the scroll data
+        // Clear the bits for the next frame
         if (scanlineCycles == 1)
             cpuMemory[0x2002] &= ~0xE0;
 
