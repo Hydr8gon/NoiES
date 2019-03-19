@@ -36,9 +36,9 @@ uint8_t stackPointer = 0xFF;
 bool interrupts[3]; // NMI, RST, BRK
 
 uint16_t scanline, scanlineCycles;
-uint16_t ppuAddress;
+uint16_t ppuAddress, ppuTempAddr;
 uint8_t ppuBuffer;
-uint8_t scrollX, scrollY;
+uint8_t scrollX;
 uint8_t spriteCount;
 bool ppuToggle;
 
@@ -670,6 +670,11 @@ void st_(uint8_t reg, uint8_t *dst)
             cpuTargetCycles += (globalCycles < 3) ? 513 : 514;
             break;
 
+        case 0x2000: // PPUCTRL
+            // Select a nametable
+            ppuTempAddr = (ppuTempAddr & ~0x0C00) | ((reg & 0x03) << 10);
+            break;
+
         case 0x2004: // OAMDATA
             // Write a value to sprite memory
             sprMemory[cpuMemory[0x2003]] = reg;
@@ -680,18 +685,23 @@ void st_(uint8_t reg, uint8_t *dst)
             // Set the scroll positions
             ppuToggle = !ppuToggle;
             if (ppuToggle)
-                scrollX = reg;
+            {
+                ppuTempAddr = (ppuTempAddr & ~0x001F) | ((reg & 0xF8) >> 3);
+                scrollX = reg & 0x07;
+            }
             else
-                scrollY = reg;
+            {
+                ppuTempAddr = (ppuTempAddr & ~0x73E0) | ((reg & 0xF8) << 2) | ((reg & 0x07) << 12);
+            }
             break;
 
         case 0x2006: // PPUADDR
             // Set the PPU address
             ppuToggle = !ppuToggle;
             if (ppuToggle)
-                ppuAddress = reg << 8;
+                ppuTempAddr = (ppuTempAddr & ~0xFF00) | ((reg & 0x7F) << 8);
             else
-                ppuAddress |= reg;
+                ppuAddress = ppuTempAddr = (ppuTempAddr & ~0x00FF) | reg;
             break;
 
         case 0x2007: // PPUDATA
@@ -930,9 +940,9 @@ void ppu()
         {
             uint8_t x = scanlineCycles - 1;
             uint8_t y = scanline;
-            uint16_t xOffset = x + scrollX;
-            uint16_t yOffset = y + scrollY;
-            uint16_t tableOffset = 0x2000 | ((cpuMemory[0x2000] & 0x03) << 10);
+            uint16_t xOffset = x + ((ppuAddress & 0x001F) << 3) + scrollX;
+            uint16_t yOffset = y + ((ppuAddress & 0x03E0) >> 2) + (ppuAddress >> 12);
+            uint16_t tableOffset = 0x2000 | (ppuAddress & 0x0C00);
 
             // Change nametable based on the scroll offset
             if (xOffset >= 256)
@@ -1034,10 +1044,14 @@ void ppu()
                     cpuMemory[0x2002] |= 0x20;
                 }
             }
+
+            // Set the horizontal scroll data
+            if (scanlineCycles == 257 && cpuMemory[0x2001] & 0x18)
+                ppuAddress = (ppuAddress & ~0x041F) | (ppuTempAddr & 0x041F);
         }
 
         // MMC3 IRQ counter
-        if (mapperType == 4 && scanlineCycles == 260 && cpuMemory[0x2001] & 0x08 && cpuMemory[0x2001] & 0x10)
+        if (mapperType == 4 && scanlineCycles == 260 && cpuMemory[0x2001] & 0x18)
         {
             if (irqCounter == 0)
             {
@@ -1061,10 +1075,20 @@ void ppu()
         if (cpuMemory[0x2000] & 0x80)
             interrupts[0] = true;
     }
-    else if (scanline == 261 && scanlineCycles == 1) // Pre-render line
+    else if (scanline == 261) // Pre-render line
     {
-        // Clear the bits for the next frame
-        cpuMemory[0x2002] &= ~0xE0;
+        // Clear the bits for the next frame and set the scroll data
+        if (scanlineCycles == 1)
+            cpuMemory[0x2002] &= ~0xE0;
+
+        // Set the scroll data
+        if (cpuMemory[0x2001] & 0x18)
+        {
+            if (scanlineCycles == 257)
+                ppuAddress = (ppuAddress & ~0x041F) | (ppuTempAddr & 0x041F);
+            else if (scanlineCycles >= 280 && scanlineCycles <= 304)
+                ppuAddress = (ppuAddress & ~0x7BE0) | (ppuTempAddr & 0x7BE0);
+        }
     }
 
     // Update the scanline counters
