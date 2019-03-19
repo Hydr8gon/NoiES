@@ -940,9 +940,16 @@ void ppu()
         {
             uint8_t x = scanlineCycles - 1;
             uint8_t y = scanline;
-            uint16_t xOffset = ((x % 8) + ((ppuAddress & 0x001F) << 3) + scrollX) % 256;
+            uint16_t xOffset = x + ((ppuAddress & 0x001F) << 3) + scrollX;
             uint16_t yOffset = ((ppuAddress & 0x03E0) >> 2) + (ppuAddress >> 12);
-            uint16_t tableOffset = ppuMemoryMirror(0x2000 | (ppuAddress & 0x0C00));
+            uint16_t tableOffset = 0x2000 | (ppuAddress & 0x0C00);
+
+            if (xOffset >= 256)
+            {
+                tableOffset ^= 0x0400;
+                xOffset %= 256;
+            }
+            tableOffset = ppuMemoryMirror(tableOffset);
 
             // Get the lower 2 bits of the palette index
             uint16_t patternOffset = (cpuMemory[0x2000] & 0x10) << 8;
@@ -972,15 +979,6 @@ void ppu()
                 // Draw a pixel
                 if (type % 2 == 1)
                     framebuffer[y * 256 + x] = palette[ppuMemory[0x3F00 | upperBits | lowerBits]];
-            }
-
-            // Increment the X coordinate every tile
-            if (scanlineCycles % 8 == 0)
-            {
-                if ((ppuAddress & 0x001F) == 0x001F)
-                    ppuAddress = (ppuAddress & ~0x001F) ^ 0x0400;
-                else
-                    ppuAddress++;
             }
 
             // Increment the Y coordinate at the end of the scanline
