@@ -42,10 +42,7 @@ void setupAudioBuffer()
 void onAppletHook(AppletHookType hook, void *param)
 {
     if (hook == AppletHookType_OnOperationMode || hook == AppletHookType_OnPerformanceMode)
-    {
-        pcvSetClockRate(PcvModule_Cpu, 1785000000);
         setupAudioBuffer();
-    }
 }
 
 void runCore(void *args)
@@ -125,8 +122,6 @@ int main(int argc, char **argv)
     audoutInitialize();
     audoutStartAudioOut();
     setupAudioBuffer();
-    pcvInitialize();
-    pcvSetClockRate(PcvModule_Cpu, 1785000000);
 
     Thread core, audio;
     threadCreate(&core, runCore, NULL, 0x80000, 0x30, 1);
@@ -157,8 +152,6 @@ int main(int argc, char **argv)
 
     closeRom();
 
-    pcvSetClockRate(PcvModule_Cpu, 1020000000);
-    pcvExit();
     audoutStopAudioOut();
     audoutExit();
     appletUnhook(&cookie);

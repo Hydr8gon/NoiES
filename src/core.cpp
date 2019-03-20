@@ -59,8 +59,9 @@ bool irqEnable, irqReload;
 
 uint8_t inputShift;
 
-FILE *rom, *save;
-uint32_t romAddress, romAddressLast, vromAddress;
+uint8_t *rom;
+FILE *save;
+uint32_t lastBankAddress, vromAddress;
 
 uint32_t framebuffer[256 * 240];
 uint32_t displayBuffer[256 * 240];
@@ -243,57 +244,34 @@ void mapperWrite(uint16_t address, uint8_t value)
                 else if (address >= 0xA000 && address < 0xC000) // Swap VROM bank 0
                 {
                     if (mapperRegister & 0x10) // 4 KB
-                    {
-                        fseek(rom, vromAddress + 0x1000 * mapperLatch, SEEK_SET);
-                        fread(ppuMemory, 1, 0x1000, rom);
-                    }
+                        memcpy(ppuMemory, &rom[vromAddress + 0x1000 * mapperLatch], 0x1000);
                     else // 8 KB
-                    {
-                        fseek(rom, vromAddress + 0x1000 * (mapperLatch & ~0x01), SEEK_SET);
-                        fread(ppuMemory, 1, 0x2000, rom);
-                    }
+                        memcpy(ppuMemory, &rom[vromAddress + 0x1000 * (mapperLatch & ~0x01)], 0x2000);
                 }
                 else if (address >= 0xC000 && address < 0xE000) // Swap VROM bank 1
                 {
                     if (mapperRegister & 0x10) // 4 KB
-                    {
-                        fseek(rom, vromAddress + 0x1000 * mapperLatch, SEEK_SET);
-                        fread(&ppuMemory[0x1000], 1, 0x1000, rom);
-                    }
+                        memcpy(&ppuMemory[0x1000], &rom[vromAddress + 0x1000 * mapperLatch], 0x1000);
                 }
                 else // Swap ROM banks
                 {
                     if (mapperRegister & 0x04) // ROM bank 1 is fixed
                     {
                         if (mapperRegister & 0x08) // 16 KB
-                        {
-                            fseek(rom, romAddress + 0x4000 * mapperLatch, SEEK_SET);
-                            fread(&cpuMemory[0x8000], 1, 0x4000, rom);
-                        }
+                            memcpy(&cpuMemory[0x8000], &rom[0x4000 * mapperLatch], 0x4000);
                         else // 32 KB
-                        {
-                            fseek(rom, romAddress + 0x4000 * (mapperLatch & 0x0E), SEEK_SET);
-                            fread(&cpuMemory[0x8000], 1, 0x8000, rom);
-                        }
+                            memcpy(&cpuMemory[0x8000], &rom[0x4000 * (mapperLatch & 0x1E)], 0x8000);
 
-                        fseek(rom, romAddressLast, SEEK_SET);
-                        fread(&cpuMemory[0xC000], 1, 0x4000, rom);
+                        memcpy(&cpuMemory[0xC000], &rom[lastBankAddress], 0x4000);
                     }
                     else // ROM bank 0 is fixed
                     {
                         if (mapperRegister & 0x08) // 16 KB
-                        {
-                            fseek(rom, romAddress + 0x4000 * mapperLatch, SEEK_SET);
-                            fread(&cpuMemory[0xC000], 1, 0x4000, rom);
-                        }
+                            memcpy(&cpuMemory[0xC000], &rom[0x4000 * mapperLatch], 0x4000);
                         else // 32 KB
-                        {
-                            fseek(rom, romAddress + 0x4000 * (mapperLatch & 0x0E), SEEK_SET);
-                            fread(&cpuMemory[0x8000], 1, 0x8000, rom);
-                        }
+                            memcpy(&cpuMemory[0x8000], &rom[0x4000 * (mapperLatch & 0x1E)], 0x8000);
 
-                        fseek(rom, romAddress, SEEK_SET);
-                        fread(&cpuMemory[0x8000], 1, 0x4000, rom);
+                        memcpy(&cpuMemory[0x8000], rom, 0x4000);
                     }
                 }
 
@@ -305,14 +283,12 @@ void mapperWrite(uint16_t address, uint8_t value)
 
         case 2: // UNROM
             // Swap the first 16 KB ROM bank
-            fseek(rom, romAddress + 0x4000 * value, SEEK_SET);
-            fread(&cpuMemory[0x8000], 1, 0x4000, rom);
+            memcpy(&cpuMemory[0x8000], &rom[0x4000 * value], 0x4000);
             break;
 
         case 3: // CNROM
             // Swap the 8 KB VROM bank
-            fseek(rom, vromAddress + 0x2000 * (value & 0x03), SEEK_SET);
-            fread(ppuMemory, 1, 0x2000, rom);
+            memcpy(ppuMemory, &rom[vromAddress + 0x2000 * (value & 0x03)], 0x2000);
             break;
 
         case 4: // MMC3
@@ -321,31 +297,28 @@ void mapperWrite(uint16_t address, uint8_t value)
                 if (address % 2 == 0) // Select banks
                 {
                     mapperRegister = value;
-                    fseek(rom, romAddressLast, SEEK_SET);
-                    fread(&cpuMemory[(value & 0x40) ? 0x8000 : 0xC000], 1, 0x2000, rom);
+                    memcpy(&cpuMemory[(value & 0x40) ? 0x8000 : 0xC000], &rom[lastBankAddress], 0x2000);
                 }
                 else // Swap banks
                 {
                     uint8_t bank = mapperRegister & 0x07;
                     if (bank < 2) // 2 KB VROM banks
                     {
-                        fseek(rom, vromAddress + 0x0400 * (value & ~0x01), SEEK_SET);
-                        fread(&ppuMemory[((mapperRegister & 0x80) << 5) + 0x0800 * bank], 1, 0x0800, rom);
+                        memcpy(&ppuMemory[((mapperRegister & 0x80) << 5) + 0x0800 * bank],
+                               &rom[vromAddress + 0x0400 * (value & ~0x01)], 0x0800);
                     }
                     else if (bank >= 2 && bank < 6) // 1 KB VROM banks
                     {
-                        fseek(rom, vromAddress + 0x0400 * value, SEEK_SET);
-                        fread(&ppuMemory[(!(mapperRegister & 0x80) << 12) + 0x0400 * (bank - 2)], 1, 0x0400, rom);
+                        memcpy(&ppuMemory[(!(mapperRegister & 0x80) << 12) + 0x0400 * (bank - 2)],
+                               &rom[vromAddress + 0x0400 * value], 0x0400);
                     }
                     else if (bank == 6) // Swappable/fixed 8 KB ROM bank
                     {
-                        fseek(rom, romAddress + 0x2000 * value, SEEK_SET);
-                        fread(&cpuMemory[(mapperRegister & 0x40) ? 0xC000 : 0x8000], 1, 0x2000, rom);
+                        memcpy(&cpuMemory[(mapperRegister & 0x40) ? 0xC000 : 0x8000], &rom[0x2000 * value], 0x2000);
                     }
                     else // Swappable 8 KB ROM bank
                     {
-                        fseek(rom, romAddress + 0x2000 * value, SEEK_SET);
-                        fread(&cpuMemory[0xA000], 1, 0x2000, rom);
+                        memcpy(&cpuMemory[0xA000], &rom[0x2000 * value], 0x2000);
                     }
                 }
             }
@@ -1193,8 +1166,8 @@ void apu()
 
 bool loadRom(char *filename)
 {
-    rom = fopen(filename, "rb");
-    if (!rom)
+    FILE *romFile = fopen(filename, "rb");
+    if (!romFile)
     {
         printf("Failed to open ROM!\n");
         return false;
@@ -1202,7 +1175,7 @@ bool loadRom(char *filename)
 
     // Read the ROM header
     uint8_t header[0x10];
-    fread(header, 1, 0x10, rom);
+    fread(header, 1, 0x10, romFile);
     mirrorMode = (header[6] & 0x08) ? 4 : 2 + !(header[6] & 0x01);
     mapperType = header[7] | (header[6] >> 4);
 
@@ -1230,9 +1203,16 @@ bool loadRom(char *filename)
 
     // Load the ROM trainer into memory
     if (header[6] & 0x04)
-        fread(&cpuMemory[0x7000], 1, 0x200, rom);
+        fread(&cpuMemory[0x7000], 1, 0x200, romFile);
 
-    romAddress = ftell(rom);
+    // Move the ROM into its own memory
+    uint16_t romStart = ftell(romFile);
+    fseek(romFile, 0, SEEK_END);
+    uint32_t romEnd = ftell(romFile);
+    rom = new uint8_t[romEnd - romStart];
+    fseek(romFile, romStart, SEEK_SET);
+    fread(rom, 1, romEnd - romStart, romFile);
+    fclose(romFile);
 
     // Load the ROM banks into memory
     switch (mapperType)
@@ -1240,35 +1220,33 @@ bool loadRom(char *filename)
         case 0: // NROM
         case 3: // CNROM
             // Mirror a single 16 KB bank or load both 16 KB banks
-            fread(&cpuMemory[0x8000], 1, 0x4000, rom);
+            memcpy(&cpuMemory[0x8000], rom, 0x4000);
             if (header[4] == 1)
                 memcpy(&cpuMemory[0xC000], &cpuMemory[0x8000], 0x4000);
             else
-                fread(&cpuMemory[0xC000], 1, 0x4000, rom);
+                memcpy(&cpuMemory[0xC000], &rom[0x4000], 0x4000);
             break;
 
         case 1: // MMC1
         case 2: // UNROM
         case 4: // MMC3
             // Load the first and last 16 KB banks
-            fread(&cpuMemory[0x8000], 1, 0x4000, rom);
-            fseek(rom, (header[4] - 2) * 0x4000, SEEK_CUR);
-            romAddressLast = ftell(rom);
-            fread(&cpuMemory[0xC000], 1, 0x4000, rom);
+            lastBankAddress = (header[4] - 1) * 0x4000;
+            memcpy(&cpuMemory[0x8000], rom, 0x4000);
+            memcpy(&cpuMemory[0xC000], &rom[lastBankAddress], 0x4000);
             mapperRegister = 0x04;
             break;
 
         default:
             printf("Unknown mapper type: %d\n", mapperType);
-            fclose(rom);
             return false;
     }
 
     if (header[5])
     {
         // Load the first 8 KB of VROM into PPU memory
-        vromAddress = ftell(rom);
-        fread(ppuMemory, 1, 0x2000, rom);
+        vromAddress = header[4] * 0x4000;
+        memcpy(ppuMemory, &rom[vromAddress], 0x2000);
     }
 
     // Trigger the reset interrupt
@@ -1286,7 +1264,7 @@ void closeRom()
         fclose(save);
     }
 
-    fclose(rom);
+    delete[] rom;
 }
 
 void runCycle()
