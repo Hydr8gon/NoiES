@@ -47,6 +47,7 @@ uint16_t apuTimers[2];
 uint16_t pulses[2];
 uint8_t dutyCycles[2];
 uint8_t volumes[2];
+uint8_t lengthCounters[2];
 uint8_t envelopeDividers[2];
 uint8_t envelopeDecays[2];
 bool envelopeFlags[2];
@@ -86,6 +87,12 @@ const uint32_t palette[] =
     0xFFC7FFFF, 0xFFC7DBFF, 0xFFBFB3FF, 0xFFDBABFF,
     0xFFE7A3FF, 0xE3FFA3FF, 0xABF3BFFF, 0xB3FFFCFF,
     0x9FFFF3FF, 0x000000FF, 0x000000FF, 0x000000FF
+};
+
+const uint8_t noteLengths[] =
+{
+    10, 254, 20,  2, 40,  4, 80,  6, 160,  8, 60, 10, 14, 12, 26, 14,
+    12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
 };
 
 // Use the immediate value as a memory address
@@ -511,6 +518,13 @@ void ld_(uint8_t *reg, uint8_t *value)
     // Handle memory-mapped registers
     switch (address)
     {
+        case 0x4015: // APUSTATUS
+            // Set bits if the corresponding length counters are greater than 0
+            *reg = 0;
+            for (int i = 0; i < 2; i++)
+                *reg |= (lengthCounters[i] > 0) << i;
+            break;
+
         case 0x4016: // JOYPAD1
             // Read button status 1 bit at a time
             *reg = (cpuMemory[0x4016] & (1 << inputShift)) ? 0x41 : 0x40;
@@ -633,7 +647,8 @@ void st_(uint8_t reg, uint8_t *dst)
     // Handle memory-mapped registers
     switch (address)
     {
-        case 0x4003: case 0x4007: // APU channel loads
+        case 0x4003: case 0x4007: // APU pulse channel loads
+            lengthCounters[(address - 0x4003) / 4] = noteLengths[(reg & 0xF8) >> 3];
             envelopeFlags[(address - 0x4003) / 4] = true;
             break;
 
@@ -1137,29 +1152,48 @@ void apu()
                 }
             }
 
-            if (frameCounter == 14915 || frameCounter == 18641)
-                frameCounter = 0;
+            if (frameCounter == 7457 || frameCounter == 14915 || frameCounter == 18641) // Half frame
+            {
+                // Clock the length counters
+                if (!(cpuMemory[0x4000 + 4 * i] & 0x20))
+                {
+                    if (lengthCounters[i] == 0)
+                        pulses[i] = 0;
+                    else
+                        lengthCounters[i]--;
+                }
+            }
         }
+
+        if (frameCounter == 14915 || frameCounter == 18641)
+            frameCounter = 0;
     }
 
     // Clock the pulse channel timers
     for (int i = 0; i < 2; i++)
     {
-        if (apuTimers[i] == 0)
+        if (cpuMemory[0x4015] & (1 << i))
         {
-            apuTimers[i] = pulses[i] = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
-            dutyCycles[i] = (cpuMemory[0x4000 + 4 * i] & 0xC0) >> 6;
-            if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
-                volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
-            else
-                volumes[i] = envelopeDecays[i];
+            if (apuTimers[i] == 0)
+            {
+                apuTimers[i] = pulses[i] = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
+                dutyCycles[i] = (cpuMemory[0x4000 + 4 * i] & 0xC0) >> 6;
+                if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
+                    volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
+                else
+                    volumes[i] = envelopeDecays[i];
 
-            if (pulses[i] < 8 || !(cpuMemory[0x4015] & (1 << i)))
-                pulses[i] = 0;
+                if (pulses[i] < 8 || lengthCounters[i] == 0)
+                    pulses[i] = 0;
+            }
+            else
+            {
+                apuTimers[i]--;
+            }
         }
         else
         {
-            apuTimers[i]--;
+            apuTimers[i] = pulses[i] = lengthCounters[i] = 0;
         }
     }
 }
@@ -1263,8 +1297,6 @@ void closeRom()
         fwrite(&cpuMemory[0x6000], 1, 0x2000, save);
         fclose(save);
     }
-
-    delete[] rom;
 }
 
 void runCycle()
