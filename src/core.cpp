@@ -43,14 +43,14 @@ uint8_t spriteCount;
 bool ppuToggle;
 
 uint16_t frameCounter;
-uint16_t apuTimers[2];
 uint16_t pulses[2];
 uint8_t dutyCycles[2];
 uint8_t volumes[2];
 uint8_t lengthCounters[2];
 uint8_t envelopeDividers[2];
 uint8_t envelopeDecays[2];
-bool envelopeFlags[2];
+uint8_t sweepDividers[2];
+uint8_t pulseFlags[2];
 
 uint8_t mirrorMode;
 uint8_t mapperType;
@@ -647,9 +647,20 @@ void st_(uint8_t reg, uint8_t *dst)
     // Handle memory-mapped registers
     switch (address)
     {
-        case 0x4003: case 0x4007: // APU pulse channel loads
+        case 0x4001: case 0x4005: // APU pulse channels
+            // Set the sweep reload flag
+            pulseFlags[(address - 0x4001) / 4] |= 0x02;
+            break;
+
+        case 0x4002: case 0x4006: // APU pulse channels
+            pulses[(address - 0x4002) / 4] = ((cpuMemory[address + 1] & 0x07) << 8) | cpuMemory[address];
+            break;
+
+        case 0x4003: case 0x4007: // APU pulse channels
+            // Load the pulse channel and set the envelope reload flag
+            pulses[(address - 0x4003) / 4] = ((cpuMemory[address] & 0x07) << 8) | cpuMemory[address - 1];
             lengthCounters[(address - 0x4003) / 4] = noteLengths[(reg & 0xF8) >> 3];
-            envelopeFlags[(address - 0x4003) / 4] = true;
+            pulseFlags[(address - 0x4003) / 4] |= 0x01;
             break;
 
         case 0x4014: // OAMDMA
@@ -1128,10 +1139,10 @@ void apu()
     {
         for (int i = 0; i < 2; i++)
         {
-            if (envelopeFlags[i])
+            if (pulseFlags[i] & 0x01)
             {
                 // Reload the envelope values
-                envelopeFlags[i] = false;
+                pulseFlags[i] &= ~0x01;
                 envelopeDividers[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
                 envelopeDecays[i] = 0x0F;
             }
@@ -1154,13 +1165,34 @@ void apu()
 
             if (frameCounter == 7457 || frameCounter == 14915 || frameCounter == 18641) // Half frame
             {
-                // Clock the length counters
+                // Clock the length counters if they're enabled
                 if (!(cpuMemory[0x4000 + 4 * i] & 0x20))
                 {
                     if (lengthCounters[i] == 0)
                         pulses[i] = 0;
                     else
                         lengthCounters[i]--;
+                }
+
+                // Sweep the pulse channel frequencies if sweeps are enabled
+                if (sweepDividers[i] == 0 && cpuMemory[0x4001 + i * 4] & 0x80)
+                {
+                    int16_t sweep = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
+                    sweep >>= cpuMemory[0x4001 + i * 4] & 0x07;
+                    if (cpuMemory[0x4001 + i * 4] & 0x08) // Negation
+                        sweep -= 2 * sweep + ((i == 0) ? 1 : 0);
+                    pulses[i] += sweep;
+                }
+
+                // Clock the sweep dividers
+                if ((pulseFlags[i] & 0x02) || sweepDividers[i] == 0)
+                {
+                    pulseFlags[i] &= ~0x02;
+                    sweepDividers[i] = (cpuMemory[0x4001 + i * 4] & 0x70) >> 4;
+                }
+                else
+                {
+                    sweepDividers[i]--;
                 }
             }
         }
@@ -1169,31 +1201,23 @@ void apu()
             frameCounter = 0;
     }
 
-    // Clock the pulse channel timers
+    // Update the pulse channel information
     for (int i = 0; i < 2; i++)
     {
         if (cpuMemory[0x4015] & (1 << i))
         {
-            if (apuTimers[i] == 0)
-            {
-                apuTimers[i] = pulses[i] = ((cpuMemory[0x4003 + 4 * i] & 0x07) << 8) | cpuMemory[0x4002 + 4 * i];
-                dutyCycles[i] = (cpuMemory[0x4000 + 4 * i] & 0xC0) >> 6;
-                if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
-                    volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
-                else
-                    volumes[i] = envelopeDecays[i];
+            dutyCycles[i] = (cpuMemory[0x4000 + 4 * i] & 0xC0) >> 6;
+            if (cpuMemory[0x4000 + 4 * i] & 0x10) // Constant volume
+                volumes[i] = cpuMemory[0x4000 + 4 * i] & 0x0F;
+            else // Envelope-controlled volume
+                volumes[i] = envelopeDecays[i];
 
-                if (pulses[i] < 8 || lengthCounters[i] == 0)
-                    pulses[i] = 0;
-            }
-            else
-            {
-                apuTimers[i]--;
-            }
+            if (pulses[i] < 8 || pulses[i] > 0x7FF || lengthCounters[i] == 0)
+                pulses[i] = 0;
         }
         else
         {
-            apuTimers[i] = pulses[i] = lengthCounters[i] = 0;
+            pulses[i] = lengthCounters[i] = 0;
         }
     }
 }
