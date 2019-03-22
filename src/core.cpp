@@ -17,6 +17,8 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include "core.h"
+
 #include <chrono>
 #include <stdio.h>
 #include <string.h>
@@ -1113,7 +1115,9 @@ void ppu()
         scanline = 0;
 
         // Copy the finished frame to the display
+        displayMutexLock();
         memcpy(displayBuffer, framebuffer, sizeof(displayBuffer));
+        displayMutexUnlock();
 
         // Clear the framebuffer
         for (int i = 0; i < 256 * 240; i++)

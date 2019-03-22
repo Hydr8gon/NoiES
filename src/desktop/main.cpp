@@ -17,13 +17,26 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
+#include <mutex>
 #include <thread>
 #include "GL/glut.h"
 #include "portaudio.h"
 
 #include "../core.h"
 
+std::mutex displayMutex;
+
 const char keymap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd' };
+
+void displayMutexLock()
+{
+    displayMutex.lock();
+}
+
+void displayMutexUnlock()
+{
+    displayMutex.unlock();
+}
 
 void runCore()
 {
@@ -33,7 +46,9 @@ void runCore()
 
 void draw()
 {
+    displayMutexLock();
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, displayBuffer);
+    displayMutexUnlock();
     glBegin(GL_QUADS);
     glTexCoord2i(1, 1); glVertex2f( 1, -1);
     glTexCoord2i(0, 1); glVertex2f(-1, -1);

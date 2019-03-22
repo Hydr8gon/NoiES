@@ -24,6 +24,10 @@
 
 extern uint32_t displayBuffer[256 * 240];
 
+// Defined per-platform
+void displayMutexLock();
+void displayMutexUnlock();
+
 bool loadRom(char *filename);
 void closeRom();
 

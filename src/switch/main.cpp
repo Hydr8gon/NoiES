@@ -22,10 +22,22 @@
 
 string romPath = "sdmc:/";
 
+Mutex displayMutex;
+
 int outSamples;
 AudioOutBuffer audioBuffer, *audioReleasedBuffer;
 
 const u32 keymap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT };
+
+void displayMutexLock()
+{
+    mutexLock(&displayMutex);
+}
+
+void displayMutexUnlock()
+{
+    mutexUnlock(&displayMutex);
+}
 
 void setupAudioBuffer()
 {
@@ -146,7 +158,9 @@ int main(int argc, char **argv)
         }
 
         clearDisplay(0);
+        displayMutexLock();
         drawTexture(displayBuffer, 256, 240, 0, false, 256, 0, 768, 720);
+        displayMutexUnlock();
         refreshDisplay();
     }
 
