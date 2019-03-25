@@ -19,25 +19,17 @@
 
 #include "ui.h"
 #include "../core.h"
+#include "../mutex.h"
 
 string romPath = "sdmc:/";
-
-Mutex displayMutex;
 
 int outSamples;
 AudioOutBuffer audioBuffer, *audioReleasedBuffer;
 
-const u32 keymap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT };
+bool paused;
+const vector<string> pauseNames = { "Resume", "Save State", "Load State" };
 
-void displayMutexLock()
-{
-    mutexLock(&displayMutex);
-}
-
-void displayMutexUnlock()
-{
-    mutexUnlock(&displayMutex);
-}
+const u32 keymap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L | KEY_R };
 
 void setupAudioBuffer()
 {
@@ -59,18 +51,29 @@ void onAppletHook(AppletHookType hook, void *param)
 
 void runCore(void *args)
 {
-    while (true)
+    while (!paused)
         runCycle();
 }
 
 void audioOutput(void *args)
 {
-    while (true)
+    while (!paused)
     {
         for (int i = 0; i < outSamples; i++)
             ((s16*)audioBuffer.buffer)[i] = audioSample(1.15f);
         audoutPlayBuffer(&audioBuffer, &audioReleasedBuffer);
     }
+}
+
+void startCore()
+{
+    paused = false;
+    setTextureFiltering(false);
+    Thread core, audio;
+    threadCreate(&core, runCore, NULL, 0x80000, 0x30, 1);
+    threadStart(&core);
+    threadCreate(&audio, audioOutput, NULL, 0x80000, 0x30, 2);
+    threadStart(&audio);
 }
 
 bool fileBrowser()
@@ -104,6 +107,29 @@ bool fileBrowser()
     return true;
 }
 
+void pauseMenu()
+{
+    paused = true;
+
+    int selection = 0;
+
+    while (paused)
+    {
+        u32 pressed = menuScreen("NoiES", "", "", {}, pauseNames, {}, &selection);
+
+        if (pressed & KEY_A)
+        {
+            if (selection == 1) // Save state
+                saveState();
+            else if (selection == 2) // Load state
+                loadState();
+        }
+
+        if (pressed & (KEY_A | KEY_B))
+            startCore();
+    }
+}
+
 int main(int argc, char **argv)
 {
     initRenderer();
@@ -114,7 +140,7 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    if (!loadRom(const_cast<char*>(romPath.c_str())))
+    if (!loadRom(romPath))
     {
         vector<string> message =
         {
@@ -127,21 +153,14 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    AppletHookCookie cookie;
-
     appletLockExit();
+    AppletHookCookie cookie;
     appletHook(&cookie, onAppletHook, NULL);
     audoutInitialize();
     audoutStartAudioOut();
     setupAudioBuffer();
 
-    Thread core, audio;
-    threadCreate(&core, runCore, NULL, 0x80000, 0x30, 1);
-    threadStart(&core);
-    threadCreate(&audio, audioOutput, NULL, 0x80000, 0x30, 2);
-    threadStart(&audio);
-
-    setTextureFiltering(false);
+    startCore();
 
     while (appletMainLoop())
     {
@@ -157,10 +176,13 @@ int main(int argc, char **argv)
                 releaseKey(i);
         }
 
+        if (pressed & keymap[8])
+            pauseMenu();
+
         clearDisplay(0);
-        displayMutexLock();
+        lockMutex(displayMutex);
         drawTexture(displayBuffer, 256, 240, 0, false, 256, 0, 768, 720);
-        displayMutexUnlock();
+        unlockMutex(displayMutex);
         refreshDisplay();
     }
 

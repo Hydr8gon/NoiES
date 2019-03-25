@@ -20,9 +20,11 @@
 #include "core.h"
 
 #include <chrono>
+#include <cstring>
 #include <stdio.h>
-#include <string.h>
 #include <unistd.h>
+
+#include "mutex.h"
 
 uint8_t cpuMemory[0x10000];
 uint8_t ppuMemory[0x4000];
@@ -62,14 +64,16 @@ bool irqEnable, irqReload;
 
 uint8_t inputShift;
 
+std::string romName;
 uint8_t *rom;
-FILE *save;
 uint32_t lastBankAddress, vromAddress;
+bool save;
 
+std::chrono::steady_clock::time_point timer;
 uint32_t framebuffer[256 * 240];
 uint32_t displayBuffer[256 * 240];
+void *displayMutex;
 float wavelengths[2];
-std::chrono::steady_clock::time_point timer;
 
 const uint32_t palette[] =
 {
@@ -1115,9 +1119,9 @@ void ppu()
         scanline = 0;
 
         // Copy the finished frame to the display
-        displayMutexLock();
+        lockMutex(displayMutex);
         memcpy(displayBuffer, framebuffer, sizeof(displayBuffer));
-        displayMutexUnlock();
+        unlockMutex(displayMutex);
 
         // Clear the framebuffer
         for (int i = 0; i < 256 * 240; i++)
@@ -1226,9 +1230,9 @@ void apu()
     }
 }
 
-bool loadRom(char *filename)
+bool loadRom(std::string filename)
 {
-    FILE *romFile = fopen(filename, "rb");
+    FILE *romFile = fopen(filename.c_str(), "rb");
     if (!romFile)
     {
         printf("Failed to open ROM!\n");
@@ -1251,19 +1255,19 @@ bool loadRom(char *filename)
         return false;
     }
 
+    romName = filename.substr(0, filename.rfind("."));
+
     // Load a savefile if the ROM supports it
     if (header[6] & 0x02)
     {
-        char *ext = (char*)"sav";
-        memcpy(&filename[strlen(filename) - 3], ext, 3);
-        save = fopen(filename, "rb");
-        if (save)
-            fread(&cpuMemory[0x6000], 1, 0x2000, save);
-        fclose(save);
-        save = fopen(filename, "wb");
+        save = true;
+        FILE *saveFile = fopen((romName + ".sav").c_str(), "rb");
+        if (saveFile)
+            fread(&cpuMemory[0x6000], 1, 0x2000, saveFile);
+        fclose(saveFile);
     }
 
-    // Load the ROM trainer into memory
+    // Load the ROM trainer into memory if it exists
     if (header[6] & 0x04)
         fread(&cpuMemory[0x7000], 1, 0x200, romFile);
 
@@ -1304,15 +1308,17 @@ bool loadRom(char *filename)
             return false;
     }
 
+    // Load the first 8 KB of VROM into PPU memory if it exists
     if (header[5])
     {
-        // Load the first 8 KB of VROM into PPU memory
         vromAddress = header[4] * 0x4000;
         memcpy(ppuMemory, &rom[vromAddress], 0x2000);
     }
 
     // Trigger the reset interrupt
     interrupts[1] = true;
+
+    displayMutex = createMutex();
 
     return true;
 }
@@ -1322,8 +1328,9 @@ void closeRom()
     if (save)
     {
         // Write the savefile
-        fwrite(&cpuMemory[0x6000], 1, 0x2000, save);
-        fclose(save);
+        FILE *saveFile = fopen((romName + ".sav").c_str(), "wb");
+        fwrite(&cpuMemory[0x6000], 1, 0x2000, saveFile);
+        fclose(saveFile);
     }
 }
 
@@ -1359,10 +1366,106 @@ int16_t audioSample(float pitch)
 
 void pressKey(uint8_t key)
 {
+    // Set the bit corresponding to the key
     cpuMemory[0x4016] |= 1 << key;
 }
 
 void releaseKey(uint8_t key)
 {
+    // Clear the bit corresponding to the key
     cpuMemory[0x4016] &= ~(1 << key);
+}
+
+void saveState()
+{
+    FILE *state = fopen((romName + ".noi").c_str(), "wb");
+
+    // Save everything to the state file
+    fwrite(cpuMemory,        1, sizeof(cpuMemory),        state);
+    fwrite(ppuMemory,        1, sizeof(ppuMemory),        state);
+    fwrite(sprMemory,        1, sizeof(sprMemory),        state);
+    fwrite(&globalCycles,    1, sizeof(globalCycles),     state);
+    fwrite(&cpuCycles,       1, sizeof(cpuCycles),        state);
+    fwrite(&cpuTargetCycles, 1, sizeof(cpuTargetCycles),  state);
+    fwrite(&programCounter,  1, sizeof(programCounter),   state);
+    fwrite(&accumulator,     1, sizeof(accumulator),      state);
+    fwrite(&registerX,       1, sizeof(registerX),        state);
+    fwrite(&registerY,       1, sizeof(registerY),        state);
+    fwrite(&flags,           1, sizeof(flags),            state);
+    fwrite(&stackPointer,    1, sizeof(stackPointer),     state);
+    fwrite(interrupts,       1, sizeof(interrupts),       state);
+    fwrite(&scanline,        1, sizeof(scanline),         state);
+    fwrite(&scanlineCycles,  1, sizeof(scanlineCycles),   state);
+    fwrite(&ppuAddress,      1, sizeof(ppuAddress),       state);
+    fwrite(&ppuTempAddr,     1, sizeof(ppuTempAddr),      state);
+    fwrite(&ppuBuffer,       1, sizeof(ppuBuffer),        state);
+    fwrite(&scrollX,         1, sizeof(scrollX),          state);
+    fwrite(&spriteCount,     1, sizeof(spriteCount),      state);
+    fwrite(&ppuToggle,       1, sizeof(ppuToggle),        state);
+    fwrite(&frameCounter,    1, sizeof(frameCounter),     state);
+    fwrite(pulses,           1, sizeof(pulses),           state);
+    fwrite(lengthCounters,   1, sizeof(lengthCounters),   state);
+    fwrite(envelopeDividers, 1, sizeof(envelopeDividers), state);
+    fwrite(envelopeDecays,   1, sizeof(envelopeDecays),   state);
+    fwrite(sweepDividers,    1, sizeof(sweepDividers),    state);
+    fwrite(pulseFlags,       1, sizeof(pulseFlags),       state);
+    fwrite(&mirrorMode,      1, sizeof(mirrorMode),       state);
+    fwrite(&mapperRegister,  1, sizeof(mapperRegister),   state);
+    fwrite(&mapperLatch,     1, sizeof(mapperLatch),      state);
+    fwrite(&mapperShift,     1, sizeof(mapperShift),      state);
+    fwrite(&irqCounter,      1, sizeof(irqCounter),       state);
+    fwrite(&irqLatch,        1, sizeof(irqLatch),         state);
+    fwrite(&irqEnable,       1, sizeof(irqEnable),        state);
+    fwrite(&irqReload,       1, sizeof(irqReload),        state);
+    fwrite(&inputShift,      1, sizeof(inputShift),       state);
+
+    fclose(state);
+}
+
+void loadState()
+{
+    FILE *state = fopen((romName + ".noi").c_str(), "rb");
+    if (!state)
+        return;
+
+    // Load everything from the state file
+    fread(cpuMemory,        1, sizeof(cpuMemory),        state);
+    fread(ppuMemory,        1, sizeof(ppuMemory),        state);
+    fread(sprMemory,        1, sizeof(sprMemory),        state);
+    fread(&globalCycles,    1, sizeof(globalCycles),     state);
+    fread(&cpuCycles,       1, sizeof(cpuCycles),        state);
+    fread(&cpuTargetCycles, 1, sizeof(cpuTargetCycles),  state);
+    fread(&programCounter,  1, sizeof(programCounter),   state);
+    fread(&accumulator,     1, sizeof(accumulator),      state);
+    fread(&registerX,       1, sizeof(registerX),        state);
+    fread(&registerY,       1, sizeof(registerY),        state);
+    fread(&flags,           1, sizeof(flags),            state);
+    fread(&stackPointer,    1, sizeof(stackPointer),     state);
+    fread(interrupts,       1, sizeof(interrupts),       state);
+    fread(&scanline,        1, sizeof(scanline),         state);
+    fread(&scanlineCycles,  1, sizeof(scanlineCycles),   state);
+    fread(&ppuAddress,      1, sizeof(ppuAddress),       state);
+    fread(&ppuTempAddr,     1, sizeof(ppuTempAddr),      state);
+    fread(&ppuBuffer,       1, sizeof(ppuBuffer),        state);
+    fread(&scrollX,         1, sizeof(scrollX),          state);
+    fread(&spriteCount,     1, sizeof(spriteCount),      state);
+    fread(&ppuToggle,       1, sizeof(ppuToggle),        state);
+    fread(&frameCounter,    1, sizeof(frameCounter),     state);
+    fread(pulses,           1, sizeof(pulses),           state);
+    fread(lengthCounters,   1, sizeof(lengthCounters),   state);
+    fread(envelopeDividers, 1, sizeof(envelopeDividers), state);
+    fread(envelopeDecays,   1, sizeof(envelopeDecays),   state);
+    fread(sweepDividers,    1, sizeof(sweepDividers),    state);
+    fread(pulseFlags,       1, sizeof(pulseFlags),       state);
+    fread(&mirrorMode,      1, sizeof(mirrorMode),       state);
+    fread(&mapperRegister,  1, sizeof(mapperRegister),   state);
+    fread(&mapperLatch,     1, sizeof(mapperLatch),      state);
+    fread(&mapperShift,     1, sizeof(mapperShift),      state);
+    fread(&irqCounter,      1, sizeof(irqCounter),       state);
+    fread(&irqLatch,        1, sizeof(irqLatch),         state);
+    fread(&irqEnable,       1, sizeof(irqEnable),        state);
+    fread(&irqReload,       1, sizeof(irqReload),        state);
+    fread(&inputShift,      1, sizeof(inputShift),       state);
+
+    fclose(state);
 }

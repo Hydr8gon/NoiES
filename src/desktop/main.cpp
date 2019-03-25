@@ -17,38 +17,41 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include <mutex>
 #include <thread>
 #include "GL/glut.h"
 #include "portaudio.h"
 
 #include "../core.h"
+#include "../mutex.h"
 
-std::mutex displayMutex;
+bool requestSave, requestLoad;
 
-const char keymap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd' };
-
-void displayMutexLock()
-{
-    displayMutex.lock();
-}
-
-void displayMutexUnlock()
-{
-    displayMutex.unlock();
-}
+const char keymap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd', '1', '2' };
 
 void runCore()
 {
     while (true)
+    {
         runCycle();
+
+        if (requestSave)
+        {
+            saveState();
+            requestSave = false;
+        }
+        else if (requestLoad)
+        {
+            loadState();
+            requestLoad = false;
+        }
+    }
 }
 
 void draw()
 {
-    displayMutexLock();
+    lockMutex(displayMutex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, displayBuffer);
-    displayMutexUnlock();
+    unlockMutex(displayMutex);
     glBegin(GL_QUADS);
     glTexCoord2i(1, 1); glVertex2f( 1, -1);
     glTexCoord2i(0, 1); glVertex2f(-1, -1);
@@ -66,6 +69,11 @@ void keyDown(unsigned char key, int x, int y)
         if (key == keymap[i])
             pressKey(i);
     }
+
+    if (key == keymap[8])
+        requestSave = true;
+    else if (key == keymap[9])
+        requestLoad = true;
 }
 
 void keyUp(unsigned char key, int x, int y)

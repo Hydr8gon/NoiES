@@ -17,25 +17,21 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef CORE_H
-#define CORE_H
+#include <switch.h>
 
-#include <stdint.h>
-#include <string>
+void *createMutex()
+{
+    Mutex *mutex = new Mutex;
+    mutexInit(mutex);
+    return mutex;
+}
 
-extern uint32_t displayBuffer[256 * 240];
-extern void *displayMutex;
+void lockMutex(void *mutex)
+{
+    mutexLock((Mutex*)mutex);
+}
 
-bool loadRom(std::string filename);
-void closeRom();
-
-void runCycle();
-int16_t audioSample(float pitch);
-
-void pressKey(uint8_t key);
-void releaseKey(uint8_t key);
-
-void saveState();
-void loadState();
-
-#endif // CORE_H
+void unlockMutex(void *mutex)
+{
+    mutexUnlock((Mutex*)mutex);
+}
