@@ -101,6 +101,53 @@ const uint8_t noteLengths[] =
     12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
 };
 
+typedef struct
+{
+    void *pointer;
+    uint32_t size;
+} StateItem;
+
+const StateItem stateItems[] =
+{
+    { cpuMemory,        sizeof(cpuMemory)        },
+    { ppuMemory,        sizeof(ppuMemory)        },
+    { sprMemory,        sizeof(sprMemory)        },
+    { &globalCycles,    sizeof(globalCycles)     },
+    { &cpuCycles,       sizeof(cpuCycles)        },
+    { &cpuTargetCycles, sizeof(cpuTargetCycles)  },
+    { &programCounter,  sizeof(programCounter)   },
+    { &accumulator,     sizeof(accumulator)      },
+    { &registerX,       sizeof(registerX)        },
+    { &registerY,       sizeof(registerY)        },
+    { &flags,           sizeof(flags)            },
+    { &stackPointer,    sizeof(stackPointer)     },
+    { interrupts,       sizeof(interrupts)       },
+    { &scanline,        sizeof(scanline)         },
+    { &scanlineCycles,  sizeof(scanlineCycles)   },
+    { &ppuAddress,      sizeof(ppuAddress)       },
+    { &ppuTempAddr,     sizeof(ppuTempAddr)      },
+    { &ppuBuffer,       sizeof(ppuBuffer)        },
+    { &scrollX,         sizeof(scrollX)          },
+    { &spriteCount,     sizeof(spriteCount)      },
+    { &ppuToggle,       sizeof(ppuToggle)        },
+    { &frameCounter,    sizeof(frameCounter)     },
+    { pulses,           sizeof(pulses)           },
+    { lengthCounters,   sizeof(lengthCounters)   },
+    { envelopeDividers, sizeof(envelopeDividers) },
+    { envelopeDecays,   sizeof(envelopeDecays)   },
+    { sweepDividers,    sizeof(sweepDividers)    },
+    { pulseFlags,       sizeof(pulseFlags)       },
+    { &mirrorMode,      sizeof(mirrorMode)       },
+    { &mapperRegister,  sizeof(mapperRegister)   },
+    { &mapperLatch,     sizeof(mapperLatch)      },
+    { &mapperShift,     sizeof(mapperShift)      },
+    { &irqCounter,      sizeof(irqCounter)       },
+    { &irqLatch,        sizeof(irqLatch)         },
+    { &irqEnable,       sizeof(irqEnable)        },
+    { &irqReload,       sizeof(irqReload)        },
+    { &inputShift,      sizeof(inputShift)       }
+};
+
 // Use the immediate value as a memory address
 uint8_t *zeroPage()
 {
@@ -1239,6 +1286,10 @@ bool loadRom(std::string filename)
         return false;
     }
 
+    // Clear the state items
+    for (unsigned int i = 0; i < sizeof(stateItems) / sizeof(StateItem); i++)
+        memset(stateItems[i].pointer, 0, stateItems[i].size);
+
     // Read the ROM header
     uint8_t header[0x10];
     fread(header, 1, 0x10, romFile);
@@ -1325,9 +1376,9 @@ bool loadRom(std::string filename)
 
 void closeRom()
 {
+    // Write the savefile
     if (save)
     {
-        // Write the savefile
         FILE *saveFile = fopen((romName + ".sav").c_str(), "wb");
         fwrite(&cpuMemory[0x6000], 1, 0x2000, saveFile);
         fclose(saveFile);
@@ -1378,94 +1429,21 @@ void releaseKey(uint8_t key)
 
 void saveState()
 {
+    // Write the state items to a state file
     FILE *state = fopen((romName + ".noi").c_str(), "wb");
-
-    // Save everything to the state file
-    fwrite(cpuMemory,        1, sizeof(cpuMemory),        state);
-    fwrite(ppuMemory,        1, sizeof(ppuMemory),        state);
-    fwrite(sprMemory,        1, sizeof(sprMemory),        state);
-    fwrite(&globalCycles,    1, sizeof(globalCycles),     state);
-    fwrite(&cpuCycles,       1, sizeof(cpuCycles),        state);
-    fwrite(&cpuTargetCycles, 1, sizeof(cpuTargetCycles),  state);
-    fwrite(&programCounter,  1, sizeof(programCounter),   state);
-    fwrite(&accumulator,     1, sizeof(accumulator),      state);
-    fwrite(&registerX,       1, sizeof(registerX),        state);
-    fwrite(&registerY,       1, sizeof(registerY),        state);
-    fwrite(&flags,           1, sizeof(flags),            state);
-    fwrite(&stackPointer,    1, sizeof(stackPointer),     state);
-    fwrite(interrupts,       1, sizeof(interrupts),       state);
-    fwrite(&scanline,        1, sizeof(scanline),         state);
-    fwrite(&scanlineCycles,  1, sizeof(scanlineCycles),   state);
-    fwrite(&ppuAddress,      1, sizeof(ppuAddress),       state);
-    fwrite(&ppuTempAddr,     1, sizeof(ppuTempAddr),      state);
-    fwrite(&ppuBuffer,       1, sizeof(ppuBuffer),        state);
-    fwrite(&scrollX,         1, sizeof(scrollX),          state);
-    fwrite(&spriteCount,     1, sizeof(spriteCount),      state);
-    fwrite(&ppuToggle,       1, sizeof(ppuToggle),        state);
-    fwrite(&frameCounter,    1, sizeof(frameCounter),     state);
-    fwrite(pulses,           1, sizeof(pulses),           state);
-    fwrite(lengthCounters,   1, sizeof(lengthCounters),   state);
-    fwrite(envelopeDividers, 1, sizeof(envelopeDividers), state);
-    fwrite(envelopeDecays,   1, sizeof(envelopeDecays),   state);
-    fwrite(sweepDividers,    1, sizeof(sweepDividers),    state);
-    fwrite(pulseFlags,       1, sizeof(pulseFlags),       state);
-    fwrite(&mirrorMode,      1, sizeof(mirrorMode),       state);
-    fwrite(&mapperRegister,  1, sizeof(mapperRegister),   state);
-    fwrite(&mapperLatch,     1, sizeof(mapperLatch),      state);
-    fwrite(&mapperShift,     1, sizeof(mapperShift),      state);
-    fwrite(&irqCounter,      1, sizeof(irqCounter),       state);
-    fwrite(&irqLatch,        1, sizeof(irqLatch),         state);
-    fwrite(&irqEnable,       1, sizeof(irqEnable),        state);
-    fwrite(&irqReload,       1, sizeof(irqReload),        state);
-    fwrite(&inputShift,      1, sizeof(inputShift),       state);
-
+    for (unsigned int i = 0; i < sizeof(stateItems) / sizeof(StateItem); i++)
+        fwrite(stateItems[i].pointer, 1, stateItems[i].size, state);
     fclose(state);
 }
 
 void loadState()
 {
+    // Load the state items from the state file if it exists
     FILE *state = fopen((romName + ".noi").c_str(), "rb");
-    if (!state)
-        return;
-
-    // Load everything from the state file
-    fread(cpuMemory,        1, sizeof(cpuMemory),        state);
-    fread(ppuMemory,        1, sizeof(ppuMemory),        state);
-    fread(sprMemory,        1, sizeof(sprMemory),        state);
-    fread(&globalCycles,    1, sizeof(globalCycles),     state);
-    fread(&cpuCycles,       1, sizeof(cpuCycles),        state);
-    fread(&cpuTargetCycles, 1, sizeof(cpuTargetCycles),  state);
-    fread(&programCounter,  1, sizeof(programCounter),   state);
-    fread(&accumulator,     1, sizeof(accumulator),      state);
-    fread(&registerX,       1, sizeof(registerX),        state);
-    fread(&registerY,       1, sizeof(registerY),        state);
-    fread(&flags,           1, sizeof(flags),            state);
-    fread(&stackPointer,    1, sizeof(stackPointer),     state);
-    fread(interrupts,       1, sizeof(interrupts),       state);
-    fread(&scanline,        1, sizeof(scanline),         state);
-    fread(&scanlineCycles,  1, sizeof(scanlineCycles),   state);
-    fread(&ppuAddress,      1, sizeof(ppuAddress),       state);
-    fread(&ppuTempAddr,     1, sizeof(ppuTempAddr),      state);
-    fread(&ppuBuffer,       1, sizeof(ppuBuffer),        state);
-    fread(&scrollX,         1, sizeof(scrollX),          state);
-    fread(&spriteCount,     1, sizeof(spriteCount),      state);
-    fread(&ppuToggle,       1, sizeof(ppuToggle),        state);
-    fread(&frameCounter,    1, sizeof(frameCounter),     state);
-    fread(pulses,           1, sizeof(pulses),           state);
-    fread(lengthCounters,   1, sizeof(lengthCounters),   state);
-    fread(envelopeDividers, 1, sizeof(envelopeDividers), state);
-    fread(envelopeDecays,   1, sizeof(envelopeDecays),   state);
-    fread(sweepDividers,    1, sizeof(sweepDividers),    state);
-    fread(pulseFlags,       1, sizeof(pulseFlags),       state);
-    fread(&mirrorMode,      1, sizeof(mirrorMode),       state);
-    fread(&mapperRegister,  1, sizeof(mapperRegister),   state);
-    fread(&mapperLatch,     1, sizeof(mapperLatch),      state);
-    fread(&mapperShift,     1, sizeof(mapperShift),      state);
-    fread(&irqCounter,      1, sizeof(irqCounter),       state);
-    fread(&irqLatch,        1, sizeof(irqLatch),         state);
-    fread(&irqEnable,       1, sizeof(irqEnable),        state);
-    fread(&irqReload,       1, sizeof(irqReload),        state);
-    fread(&inputShift,      1, sizeof(inputShift),       state);
-
+    if (state)
+    {
+        for (unsigned int i = 0; i < sizeof(stateItems) / sizeof(StateItem); i++)
+            fread(stateItems[i].pointer, 1, stateItems[i].size, state);
+    }
     fclose(state);
 }

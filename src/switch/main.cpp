@@ -21,13 +21,11 @@
 #include "../core.h"
 #include "../mutex.h"
 
-string romPath = "sdmc:/";
-
 int outSamples;
 AudioOutBuffer audioBuffer, *audioReleasedBuffer;
 
 bool paused;
-const vector<string> pauseNames = { "Resume", "Save State", "Load State" };
+const vector<string> pauseNames = { "Resume", "Save State", "Load State", "File Browser" };
 
 const u32 keymap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L | KEY_R };
 
@@ -78,6 +76,7 @@ void startCore()
 
 bool fileBrowser()
 {
+    string romPath = "sdmc:/";
     int selection = 0;
 
     while (true)
@@ -91,7 +90,20 @@ bool fileBrowser()
             selection = 0;
 
             if (romPath.find(".nes", romPath.length() - 4) != string::npos)
+            {
+                if (!loadRom(romPath))
+                {
+                    vector<string> message =
+                    {
+                        "The ROM couldn't be loaded.",
+                        "It probably either has an unsupported mapper or is corrupt."
+                    };
+
+                    messageScreen("Unable to load ROM", message, true);
+                    return false;
+                }
                 break;
+            }
         }
         else if (pressed & KEY_B && romPath != "sdmc:/")
         {
@@ -107,10 +119,9 @@ bool fileBrowser()
     return true;
 }
 
-void pauseMenu()
+bool pauseMenu()
 {
     paused = true;
-
     int selection = 0;
 
     while (paused)
@@ -119,15 +130,26 @@ void pauseMenu()
 
         if (pressed & KEY_A)
         {
-            if (selection == 1) // Save state
+            if (selection == 1) // Save State
+            {
                 saveState();
-            else if (selection == 2) // Load state
+            }
+            else if (selection == 2) // Load State
+            {
                 loadState();
+            }
+            else if (selection == 3) // File Browser
+            {
+                if (!fileBrowser())
+                    return false;
+            }
         }
 
         if (pressed & (KEY_A | KEY_B))
             startCore();
     }
+
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -136,19 +158,6 @@ int main(int argc, char **argv)
 
     if (!fileBrowser())
     {
-        deinitRenderer();
-        return 0;
-    }
-
-    if (!loadRom(romPath))
-    {
-        vector<string> message =
-        {
-            "The ROM couldn't be loaded.",
-            "It probably either has an unsupported mapper or is corrupt."
-        };
-
-        messageScreen("Unable to load ROM", message, true);
         deinitRenderer();
         return 0;
     }
@@ -177,7 +186,10 @@ int main(int argc, char **argv)
         }
 
         if (pressed & keymap[8])
-            pauseMenu();
+        {
+            if (!pauseMenu())
+                break;
+        }
 
         clearDisplay(0);
         lockMutex(displayMutex);
