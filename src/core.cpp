@@ -722,6 +722,10 @@ void st_(uint8_t reg, uint8_t *dst)
             cpuTargetCycles += (globalCycles < 3) ? 513 : 514;
             break;
 
+        case 0x4017: // APU frame counter
+            frameCounter = 0;
+            break;
+
         case 0x2000: // PPUCTRL
             // Select a nametable
             ppuTempAddr = (ppuTempAddr & ~0x0C00) | ((reg & 0x03) << 10);
