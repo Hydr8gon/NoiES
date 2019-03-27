@@ -20,10 +20,12 @@
 #include "core.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstring>
-#include <stdio.h>
 #include <unistd.h>
+#include <vector>
 
+#include "config.h"
 #include "mutex.h"
 
 uint8_t cpuMemory[0x10000];
@@ -107,7 +109,7 @@ typedef struct
     uint32_t size;
 } StateItem;
 
-const StateItem stateItems[] =
+const std::vector<StateItem> stateItems =
 {
     { cpuMemory,        sizeof(cpuMemory)        },
     { ppuMemory,        sizeof(ppuMemory)        },
@@ -1103,7 +1105,8 @@ void ppu()
                         }
                     }
 
-                    spriteCount++;
+                    if (!disableSpriteLimit)
+                        spriteCount++;
                 }
                 else // Sprite overflow
                 {
@@ -1291,7 +1294,7 @@ bool loadRom(std::string filename)
     }
 
     // Clear the state items
-    for (unsigned int i = 0; i < sizeof(stateItems) / sizeof(StateItem); i++)
+    for (unsigned int i = 0; i < stateItems.size(); i++)
         memset(stateItems[i].pointer, 0, stateItems[i].size);
 
     // Read the ROM header
@@ -1318,8 +1321,10 @@ bool loadRom(std::string filename)
         save = true;
         FILE *saveFile = fopen((romName + ".sav").c_str(), "rb");
         if (saveFile)
+        {
             fread(&cpuMemory[0x6000], 1, 0x2000, saveFile);
-        fclose(saveFile);
+            fclose(saveFile);
+        }
     }
 
     // Load the ROM trainer into memory if it exists
@@ -1433,21 +1438,24 @@ void releaseKey(uint8_t key)
 
 void saveState()
 {
-    // Write the state items to a state file
     FILE *state = fopen((romName + ".noi").c_str(), "wb");
-    for (unsigned int i = 0; i < sizeof(stateItems) / sizeof(StateItem); i++)
+
+    // Write the state items to a state file
+    for (unsigned int i = 0; i < stateItems.size(); i++)
         fwrite(stateItems[i].pointer, 1, stateItems[i].size, state);
+
     fclose(state);
 }
 
 void loadState()
 {
-    // Load the state items from the state file if it exists
     FILE *state = fopen((romName + ".noi").c_str(), "rb");
-    if (state)
-    {
-        for (unsigned int i = 0; i < sizeof(stateItems) / sizeof(StateItem); i++)
-            fread(stateItems[i].pointer, 1, stateItems[i].size, state);
-    }
+    if (!state)
+        return;
+
+    // Load the state items from the state file
+    for (unsigned int i = 0; i < stateItems.size(); i++)
+        fread(stateItems[i].pointer, 1, stateItems[i].size, state);
+
     fclose(state);
 }

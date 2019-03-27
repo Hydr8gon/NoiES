@@ -19,15 +19,36 @@
 
 #include "ui.h"
 #include "../core.h"
+#include "../config.h"
 #include "../mutex.h"
 
 int outSamples;
 AudioOutBuffer audioBuffer, *audioReleasedBuffer;
 
-bool paused;
-const vector<string> pauseNames = { "Resume", "Save State", "Load State", "File Browser" };
-
 const u32 keymap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L | KEY_R };
+
+bool paused;
+
+const vector<string> settingNames =
+{
+    "Disable Sprite Limit",
+    "Screen Filtering"
+};
+
+const vector<Value> settingValues =
+{
+    { { "Off", "On" }, (int*)&disableSpriteLimit },
+    { { "Off", "On" }, (int*)&screenFiltering    }
+};
+
+const vector<string> pauseNames =
+{
+    "Resume",
+    "Save State",
+    "Load State",
+    "Settings",
+    "File Browser"
+};
 
 void setupAudioBuffer()
 {
@@ -66,12 +87,32 @@ void audioOutput(void *args)
 void startCore()
 {
     paused = false;
-    setTextureFiltering(false);
+    setTextureFiltering(screenFiltering);
     Thread core, audio;
     threadCreate(&core, runCore, NULL, 0x80000, 0x30, 1);
     threadStart(&core);
     threadCreate(&audio, audioOutput, NULL, 0x80000, 0x30, 2);
     threadStart(&audio);
+}
+
+void settingsMenu()
+{
+    int selection = 0;
+
+    while (true)
+    {
+        u32 pressed = menuScreen("Settings", "", "", {}, settingNames, settingValues, &selection);
+
+        if (pressed & KEY_A)
+        {
+            *settingValues[selection].value = !(*settingValues[selection].value);
+        }
+        else if (pressed & KEY_B)
+        {
+            saveConfig();
+            return;
+        }
+    }
 }
 
 bool fileBrowser()
@@ -82,7 +123,7 @@ bool fileBrowser()
     while (true)
     {
         vector<string> files = dirContents(romPath, ".nes");
-        u32 pressed = menuScreen("NoiES", "Exit", "", {}, files, {}, &selection);
+        u32 pressed = menuScreen("NoiES", "Exit", "Settings", {}, files, {}, &selection);
 
         if (pressed & KEY_A && files.size() > 0)
         {
@@ -109,6 +150,10 @@ bool fileBrowser()
         {
             romPath = romPath.substr(0, romPath.rfind("/"));
             selection = 0;
+        }
+        else if (pressed & KEY_X)
+        {
+            settingsMenu();
         }
         else if (pressed & KEY_PLUS)
         {
@@ -138,14 +183,18 @@ bool pauseMenu()
             {
                 loadState();
             }
-            else if (selection == 3) // File Browser
+            else if (selection == 3) // Settings
+            {
+                settingsMenu();
+            }
+            else if (selection == 4) // File Browser
             {
                 if (!fileBrowser())
                     return false;
             }
         }
 
-        if (pressed & (KEY_A | KEY_B))
+        if ((pressed & KEY_A && selection != 3) || pressed & KEY_B)
             startCore();
     }
 
@@ -169,6 +218,7 @@ int main(int argc, char **argv)
     audoutStartAudioOut();
     setupAudioBuffer();
 
+    loadConfig();
     startCore();
 
     while (appletMainLoop())
@@ -199,7 +249,6 @@ int main(int argc, char **argv)
     }
 
     closeRom();
-
     audoutStopAudioOut();
     audoutExit();
     appletUnhook(&cookie);

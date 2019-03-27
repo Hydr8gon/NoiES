@@ -22,6 +22,7 @@
 #include "portaudio.h"
 
 #include "../core.h"
+#include "../config.h"
 #include "../mutex.h"
 
 bool requestSave, requestLoad;
@@ -94,6 +95,12 @@ int audioCallback(const void *in, void *out, unsigned long frames,
     return 0;
 }
 
+void onExit()
+{
+    closeRom();
+    saveConfig();
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
@@ -105,6 +112,8 @@ int main(int argc, char **argv)
     if (!loadRom(argv[1]))
         return 1;
 
+    loadConfig();
+
     glutInit(&argc, argv);
     glutInitWindowSize(256, 240);
     glutCreateWindow("NoiES");
@@ -113,15 +122,23 @@ int main(int argc, char **argv)
     GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    if (screenFiltering)
+    {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
+    else
+    {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
 
     PaStream *stream;
     Pa_Initialize();
     Pa_OpenDefaultStream(&stream, 0, 1, paInt16, 44100, 256, audioCallback, NULL);
     Pa_StartStream(stream);
 
-    atexit(closeRom);
+    atexit(onExit);
     glutDisplayFunc(draw);
     glutKeyboardFunc(keyDown);
     glutKeyboardUpFunc(keyUp);
