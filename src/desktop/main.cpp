@@ -27,7 +27,7 @@
 
 bool requestSave, requestLoad;
 
-const char keymap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd' };
+const char defaultKeyMap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd' };
 
 void runCore()
 {
@@ -67,7 +67,7 @@ void keyDown(unsigned char key, int x, int y)
 {
     for (int i = 0; i < 8; i++)
     {
-        if (key == keymap[i])
+        if (key == ((keyMap[i] == 0) ? defaultKeyMap[i] : keyMap[i]))
             pressKey(i);
     }
 }
@@ -76,7 +76,7 @@ void keyUp(unsigned char key, int x, int y)
 {
     for (int i = 0; i < 8; i++)
     {
-        if (key == keymap[i])
+        if (key == ((keyMap[i] == 0) ? defaultKeyMap[i] : keyMap[i]))
             releaseKey(i);
     }
 }

@@ -1181,11 +1181,14 @@ void ppu()
         for (int i = 0; i < 256 * 240; i++)
             framebuffer[i] = palette[ppuMemory[0x3F00]];
 
-        // Limit the FPS to 60
-        std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - timer;
-        if (elapsed.count() < 1.0f / 60)
-            usleep((1.0f / 60 - elapsed.count()) * 1000000);
-        timer = std::chrono::steady_clock::now();
+        // Limit the FPS to 60 if enabled
+        if (frameLimiter)
+        {
+            std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - timer;
+            if (elapsed.count() < 1.0f / 60)
+                usleep((1.0f / 60 - elapsed.count()) * 1000000);
+            timer = std::chrono::steady_clock::now();
+        }
     }
 }
 

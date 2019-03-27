@@ -21,8 +21,10 @@
 #include <string>
 #include <vector>
 
-int disableSpriteLimit;
-int screenFiltering;
+int disableSpriteLimit = 0;
+int screenFiltering    = 0;
+int frameLimiter       = 1;
+int keyMap[8];
 
 typedef struct
 {
@@ -33,7 +35,16 @@ typedef struct
 const std::vector<Setting> settings =
 {
     { "disableSpriteLimit", &disableSpriteLimit },
-    { "screenFiltering",    &screenFiltering    }
+    { "screenFiltering",    &screenFiltering    },
+    { "frameLimiter",       &frameLimiter       },
+    { "keyA",               &keyMap[0]          },
+    { "keyB",               &keyMap[1]          },
+    { "keySelect",          &keyMap[2]          },
+    { "keyStart",           &keyMap[3]          },
+    { "keyUp",              &keyMap[4]          },
+    { "keyDown",            &keyMap[5]          },
+    { "keyLeft",            &keyMap[6]          },
+    { "keyRight",           &keyMap[7]          }
 };
 
 void loadConfig()
@@ -50,7 +61,16 @@ void loadConfig()
         for (unsigned int i = 0; i < settings.size(); i++)
         {
             if (line.substr(0, line.rfind("=")) == settings[i].name)
-                *settings[i].value = stoi(line.substr(line.rfind("=") + 1));
+            {
+                try
+                {
+                    *settings[i].value = stoi(line.substr(line.rfind("=") + 1));
+                }
+                catch (...)
+                {
+                    // Keep the default value if the config value is invalid
+                }
+            }
         }
     }
 

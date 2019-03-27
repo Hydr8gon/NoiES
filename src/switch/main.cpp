@@ -25,20 +25,59 @@
 int outSamples;
 AudioOutBuffer audioBuffer, *audioReleasedBuffer;
 
-const u32 keymap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L | KEY_R };
+const u32 defaultKeyMap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L | KEY_R };
 
 bool paused;
+
+const vector<string> controlNames =
+{
+    "A Button",
+    "B Button",
+    "Select Button",
+    "Start Button",
+    "D-Pad Up",
+    "D-Pad Down",
+    "D-Pad Left",
+    "D-Pad Right",
+    "Reset to Defaults"
+};
+
+const vector<string> controlValueNames =
+{
+    "Default",
+    "A Button", "B Button", "X Button", "Y Button",
+    "Left Stick Click", "Right Stick Click",
+    "L Button", "R Button", "ZL Button", "ZR Button",
+    "Plus Button", "Minus Button",
+    "D-Pad Left", "D-Pad Up", "D-Pad Right", "D-Pad Down",
+    "Left Stick Left", "Left Stick Up", "Left Stick Right", "Left Stick Down",
+    "Right Stick Left", "Right Stick Up", "Right Stick Right", "Right Stick Down"
+};
+
+const vector<Value> controlValues =
+{
+    { controlValueNames, &keyMap[0] },
+    { controlValueNames, &keyMap[1] },
+    { controlValueNames, &keyMap[2] },
+    { controlValueNames, &keyMap[3] },
+    { controlValueNames, &keyMap[4] },
+    { controlValueNames, &keyMap[5] },
+    { controlValueNames, &keyMap[6] },
+    { controlValueNames, &keyMap[7] }
+};
 
 const vector<string> settingNames =
 {
     "Disable Sprite Limit",
-    "Screen Filtering"
+    "Screen Filtering",
+    "Frame Limiter"
 };
 
 const vector<Value> settingValues =
 {
-    { { "Off", "On" }, (int*)&disableSpriteLimit },
-    { { "Off", "On" }, (int*)&screenFiltering    }
+    { { "Off", "On" }, &disableSpriteLimit },
+    { { "Off", "On" }, &screenFiltering    },
+    { { "Off", "On" }, &frameLimiter       }
 };
 
 const vector<string> pauseNames =
@@ -95,13 +134,45 @@ void startCore()
     threadStart(&audio);
 }
 
+void controlsMenu()
+{
+    int selection = 0;
+
+    while (true)
+    {
+        u32 pressed = menuScreen("Controls", "", "", {}, controlNames, controlValues, &selection);
+
+        if (pressed & KEY_A)
+        {
+            if (selection == (int)controlNames.size() - 1) // Reset to defaults
+            {
+                for (unsigned int i = 0; i < controlValues.size(); i++)
+                    *controlValues[i].value = 0;
+            }
+            else
+            {
+                pressed = messageScreen("Controls", {"Press a button to map it to: " + controlNames[selection]}, false);
+                for (unsigned int i = 0; i < controlValueNames.size(); i++)
+                {
+                    if (pressed & BIT(i))
+                        *controlValues[selection].value = i + 1;
+                }
+            }
+        }
+        else if (pressed & KEY_B)
+        {
+            return;
+        }
+    }
+}
+
 void settingsMenu()
 {
     int selection = 0;
 
     while (true)
     {
-        u32 pressed = menuScreen("Settings", "", "", {}, settingNames, settingValues, &selection);
+        u32 pressed = menuScreen("Settings", "", "Controls", {}, settingNames, settingValues, &selection);
 
         if (pressed & KEY_A)
         {
@@ -111,6 +182,10 @@ void settingsMenu()
         {
             saveConfig();
             return;
+        }
+        else if (pressed & KEY_X)
+        {
+            controlsMenu();
         }
     }
 }
@@ -229,13 +304,13 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < 8; i++)
         {
-            if (pressed & keymap[i])
+            if (pressed & ((keyMap[i] == 0) ? defaultKeyMap[i] : BIT(keyMap[i] - 1)))
                 pressKey(i);
-            else if (released & keymap[i])
+            else if (released & ((keyMap[i] == 0) ? defaultKeyMap[i] : BIT(keyMap[i] - 1)))
                 releaseKey(i);
         }
 
-        if (pressed & keymap[8])
+        if (pressed & defaultKeyMap[8])
         {
             if (!pauseMenu())
                 break;

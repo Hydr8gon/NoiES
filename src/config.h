@@ -22,6 +22,8 @@
 
 extern int disableSpriteLimit;
 extern int screenFiltering;
+extern int frameLimiter;
+extern int keyMap[8];
 
 void loadConfig();
 void saveConfig();
