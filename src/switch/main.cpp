@@ -204,6 +204,7 @@ bool pauseMenu()
 int main(int argc, char **argv)
 {
     initRenderer();
+    loadConfig();
 
     if (!fileBrowser())
     {
@@ -218,7 +219,6 @@ int main(int argc, char **argv)
     audoutStartAudioOut();
     setupAudioBuffer();
 
-    loadConfig();
     startCore();
 
     while (appletMainLoop())
