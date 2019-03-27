@@ -992,7 +992,7 @@ void cpu()
 
 void ppu()
 {
-    if (scanline >= 0 && scanline < 240) // Visible lines
+    if (scanline < 240) // Visible lines
     {
         if (scanlineCycles >= 1 && scanlineCycles <= 256 && cpuMemory[0x2001] & 0x08) // Background drawing
         {
@@ -1118,25 +1118,6 @@ void ppu()
             if (scanlineCycles == 257 && cpuMemory[0x2001] & 0x18)
                 ppuAddress = (ppuAddress & ~0x041F) | (ppuTempAddr & 0x041F);
         }
-
-        // MMC3 IRQ counter
-        if (mapperType == 4 && scanlineCycles == 260 && cpuMemory[0x2001] & 0x18)
-        {
-            if (irqCounter == 0)
-            {
-                // Trigger an IRQ if they're enabled
-                if (irqEnable && !irqReload)
-                    interrupts[2] = true;
-
-                // Reload the counter
-                irqCounter = irqLatch;
-                irqReload = false;
-            }
-            else
-            {
-                irqCounter--;
-            }
-        }
     }
     else if (scanline == 241 && scanlineCycles == 1) // Start of the V-blank period
     {
@@ -1157,6 +1138,25 @@ void ppu()
                 ppuAddress = (ppuAddress & ~0x041F) | (ppuTempAddr & 0x041F);
             else if (scanlineCycles >= 280 && scanlineCycles <= 304)
                 ppuAddress = (ppuAddress & ~0x7BE0) | (ppuTempAddr & 0x7BE0);
+        }
+    }
+
+    // MMC3 IRQ counter
+    if (mapperType == 4 && (scanline < 240 || scanline == 261) && scanlineCycles == 260 && cpuMemory[0x2001] & 0x18)
+    {
+        if (irqCounter == 0)
+        {
+            // Trigger an IRQ if they're enabled
+            if (irqEnable && !irqReload)
+                interrupts[2] = true;
+
+            // Reload the counter
+            irqCounter = irqLatch - 1;
+            irqReload = false;
+        }
+        else
+        {
+            irqCounter--;
         }
     }
 
