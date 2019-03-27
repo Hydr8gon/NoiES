@@ -39,7 +39,7 @@ uint16_t programCounter;
 uint8_t accumulator, registerX, registerY;
 uint8_t flags = 0x24; // NV_BDIZC
 uint8_t stackPointer = 0xFF;
-bool interrupts[3]; // NMI, RST, BRK
+bool interrupts[3]; // NMI, RST, IRQ
 
 uint16_t scanline, scanlineCycles;
 uint16_t ppuAddress, ppuTempAddr;
@@ -509,7 +509,6 @@ void brk()
         se_(0x10);
         interrupts[2] = true;
     }
-    programCounter++;
 }
 
 // Compare a register
@@ -573,11 +572,12 @@ void ld_(uint8_t *reg, uint8_t *value)
     // Handle memory-mapped registers
     switch (address)
     {
-        case 0x4015: // APUSTATUS
+        case 0x4015: // APU status
             // Set bits if the corresponding length counters are greater than 0
-            *reg = 0;
+            *reg &= 0xC0;
             for (int i = 0; i < 2; i++)
                 *reg |= (lengthCounters[i] > 0) << i;
+            cpuMemory[0x4015] &= ~0x40;
             break;
 
         case 0x4016: // JOYPAD1
@@ -696,7 +696,7 @@ void st_(uint8_t reg, uint8_t *dst)
 
     if (address >= 0x8000)
         mapperWrite(address, reg);
-    else if (address != 0x2002 && address != 0x4016)
+    else if (address != 0x2002 && address != 0x4015 && address != 0x4016)
         cpuMemory[address] = reg;
 
     // Handle memory-mapped registers
@@ -724,8 +724,15 @@ void st_(uint8_t reg, uint8_t *dst)
             cpuTargetCycles += (globalCycles < 3) ? 513 : 514;
             break;
 
+        case 0x4015: // APU status
+            // Set the channel enable bits without clearing the interrupt bits
+            cpuMemory[0x4015] = (cpuMemory[0x4015] & 0xC0) | (reg & 0x1F);
+            break;
+
         case 0x4017: // APU frame counter
             frameCounter = 0;
+            if (reg & 0x40) // Interrupt inhibit
+                cpuMemory[0x4015] &= ~0x40;
             break;
 
         case 0x2000: // PPUCTRL
@@ -838,7 +845,7 @@ void cpu()
         case 0xD0: b__(!(flags & 0x02)); cpuTargetCycles += 2; break; // BNE
         case 0xF0: b__( (flags & 0x02)); cpuTargetCycles += 2; break; // BEQ
 
-        case 0x00: brk(); cpuTargetCycles += 7; break; // BRK
+        case 0x00: brk(); break; // BRK
 
         case 0xC9: cp_(accumulator, *immediate());     cpuTargetCycles += 2; break; // CMP immediate
         case 0xC5: cp_(accumulator, *zeroPage());      cpuTargetCycles += 3; break; // CMP zero page
@@ -1147,7 +1154,7 @@ void ppu()
         if (irqCounter == 0)
         {
             // Trigger an IRQ if they're enabled
-            if (irqEnable && !irqReload)
+            if (irqEnable && !irqReload && !(flags & 0x04))
                 interrupts[2] = true;
 
             // Reload the counter
@@ -1228,7 +1235,7 @@ void apu()
                 }
             }
 
-            if (frameCounter == 7457 || frameCounter == 14915 || frameCounter == 18641) // Half frame
+            if (frameCounter != 3729 && frameCounter != 11186) // Half frame
             {
                 // Clock the length counters if they're enabled
                 if (!(cpuMemory[0x4000 + 4 * i] & 0x20))
@@ -1260,6 +1267,13 @@ void apu()
                     sweepDividers[i]--;
                 }
             }
+        }
+
+        // Trigger an optional IRQ at the end of the 4-step sequence
+        if (frameCounter == 14915 && !(cpuMemory[0x4017] & 0x40) && !(flags & 0x04))
+        {
+            cpuMemory[0x4015] |= 0x40;
+            interrupts[2] = true;
         }
 
         if (frameCounter == 14915 || frameCounter == 18641)
