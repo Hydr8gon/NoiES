@@ -27,7 +27,7 @@
 
 bool requestSave, requestLoad;
 
-const char keymap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd', '1', '2' };
+const char keymap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd' };
 
 void runCore()
 {
@@ -70,11 +70,6 @@ void keyDown(unsigned char key, int x, int y)
         if (key == keymap[i])
             pressKey(i);
     }
-
-    if (key == keymap[8])
-        requestSave = true;
-    else if (key == keymap[9])
-        requestLoad = true;
 }
 
 void keyUp(unsigned char key, int x, int y)
@@ -93,6 +88,14 @@ int audioCallback(const void *in, void *out, unsigned long frames,
     for (int i = 0; i < frames; i++)
         *curOut++ = audioSample(2.5f);
     return 0;
+}
+
+void onMenuSelect(int selection)
+{
+    if (selection == 0) // Save State
+        requestSave = true;
+    else // Load State
+        requestLoad = true;
 }
 
 void onExit()
@@ -122,21 +125,18 @@ int main(int argc, char **argv)
     GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    if (screenFiltering)
-    {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    }
-    else
-    {
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, screenFiltering ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, screenFiltering ? GL_LINEAR : GL_NEAREST);
 
     PaStream *stream;
     Pa_Initialize();
     Pa_OpenDefaultStream(&stream, 0, 1, paInt16, 44100, 256, audioCallback, NULL);
     Pa_StartStream(stream);
+
+    glutCreateMenu(onMenuSelect);
+    glutAddMenuEntry("Save State", 0);
+    glutAddMenuEntry("Load State", 1);
+    glutAttachMenu(GLUT_RIGHT_BUTTON);
 
     atexit(onExit);
     glutDisplayFunc(draw);
