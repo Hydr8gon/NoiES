@@ -17,17 +17,27 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef MUTEX_H
-#define MUTEX_H
+#ifndef PPU_H
+#define PPU_H
 
-namespace mutex
+namespace ppu
 {
 
-void *create();
+extern uint32_t displayBuffer[256 * 240];
+extern void    *displayMutex;
 
-void lock(void *mutex);
-void unlock(void *mutex);
+extern uint8_t memory[0x4000];
+extern uint8_t mirrorMode;
+
+void reset();
+void runCycle();
+
+uint8_t registerRead(uint16_t address);
+void    registerWrite(uint16_t address, uint8_t value);
+
+void saveState(FILE *state);
+void loadState(FILE *state);
 
 }
 
-#endif // MUTEX_H
+#endif // PPU_H

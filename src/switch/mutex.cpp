@@ -19,19 +19,24 @@
 
 #include <switch.h>
 
-void *createMutex()
+namespace mutex
+{
+
+void *create()
 {
     Mutex *mutex = new Mutex;
     mutexInit(mutex);
     return mutex;
 }
 
-void lockMutex(void *mutex)
+void lock(void *mutex)
 {
     mutexLock((Mutex*)mutex);
 }
 
-void unlockMutex(void *mutex)
+void unlock(void *mutex)
 {
     mutexUnlock((Mutex*)mutex);
+}
+
 }

@@ -20,12 +20,17 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+namespace config
+{
+
 extern int disableSpriteLimit;
 extern int screenFiltering;
 extern int frameLimiter;
 extern int keyMap[8];
 
-void loadConfig();
-void saveConfig();
+void load();
+void save();
+
+}
 
 #endif // CONFIG_H

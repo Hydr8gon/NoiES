@@ -17,17 +17,23 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef MUTEX_H
-#define MUTEX_H
+#ifndef APU_H
+#define APU_H
 
-namespace mutex
+namespace apu
 {
 
-void *create();
+int16_t audioSample(float pitch);
 
-void lock(void *mutex);
-void unlock(void *mutex);
+void reset();
+void runCycle();
+
+uint8_t registerRead(uint16_t address);
+void    registerWrite(uint16_t address, uint8_t value);
+
+void saveState(FILE *state);
+void loadState(FILE *state);
 
 }
 
-#endif // MUTEX_H
+#endif // APU_H

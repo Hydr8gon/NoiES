@@ -17,17 +17,22 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef MUTEX_H
-#define MUTEX_H
+#ifndef MAPPER_H
+#define MAPPER_H
 
-namespace mutex
+#include <cstdint>
+
+namespace mapper
 {
 
-void *create();
+bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType);
+void registerWrite(uint16_t address, uint8_t value);
 
-void lock(void *mutex);
-void unlock(void *mutex);
+void irqCounter();
+
+void saveState(FILE *state);
+void loadState(FILE *state);
 
 }
 
-#endif // MUTEX_H
+#endif // MAPPER_H

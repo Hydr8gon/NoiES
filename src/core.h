@@ -20,22 +20,33 @@
 #ifndef CORE_H
 #define CORE_H
 
-#include <stdint.h>
+#include <cstdint>
 #include <string>
 
-extern uint32_t displayBuffer[256 * 240];
-extern void *displayMutex;
+using namespace std;
 
-bool loadRom(std::string filename);
+namespace core
+{
+
+typedef struct
+{
+    void *pointer;
+    uint32_t size;
+} StateItem;
+
+extern uint8_t globalCycles;
+
+int  loadRom(string filename);
 void closeRom();
 
 void runCycle();
-int16_t audioSample(float pitch);
 
 void pressKey(uint8_t key);
 void releaseKey(uint8_t key);
 
 void saveState();
 void loadState();
+
+}
 
 #endif // CORE_H

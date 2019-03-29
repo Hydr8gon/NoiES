@@ -19,18 +19,23 @@
 
 #include <mutex>
 
-void *createMutex()
+namespace mutex
+{
+
+void *create()
 {
     std::mutex *mutex = new std::mutex;
     return mutex;
 }
 
-void lockMutex(void *mutex)
+void lock(void *mutex)
 {
     ((std::mutex*)mutex)->lock();
 }
 
-void unlockMutex(void *mutex)
+void unlock(void *mutex)
 {
     ((std::mutex*)mutex)->unlock();
+}
+
 }

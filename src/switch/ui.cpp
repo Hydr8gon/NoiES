@@ -17,8 +17,6 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#include "ui.h"
-
 #include <algorithm>
 #include <chrono>
 #include <cstring>
@@ -27,6 +25,8 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <glad/glad.h>
+
+#include "ui.h"
 
 ColorSetId systemTheme;
 u32 *font, *fontColor;

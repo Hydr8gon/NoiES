@@ -17,17 +17,23 @@
     along with NoiES. If not, see <https://www.gnu.org/licenses/>.
 */
 
-#ifndef MUTEX_H
-#define MUTEX_H
+#ifndef CPU_H
+#define CPU_H
 
-namespace mutex
+namespace cpu
 {
 
-void *create();
+extern uint8_t memory[0x10000];
+extern bool interrupts[3];
 
-void lock(void *mutex);
-void unlock(void *mutex);
+extern uint8_t inputMask;
+
+void reset();
+void runCycle();
+
+void saveState(FILE *state);
+void loadState(FILE *state);
 
 }
 
-#endif // MUTEX_H
+#endif // CPU_H

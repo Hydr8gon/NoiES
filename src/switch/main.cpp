@@ -19,6 +19,8 @@
 
 #include "ui.h"
 #include "../core.h"
+#include "../ppu.h"
+#include "../apu.h"
 #include "../config.h"
 #include "../mutex.h"
 
@@ -56,14 +58,14 @@ const vector<string> controlValueNames =
 
 const vector<Value> controlValues =
 {
-    { controlValueNames, &keyMap[0] },
-    { controlValueNames, &keyMap[1] },
-    { controlValueNames, &keyMap[2] },
-    { controlValueNames, &keyMap[3] },
-    { controlValueNames, &keyMap[4] },
-    { controlValueNames, &keyMap[5] },
-    { controlValueNames, &keyMap[6] },
-    { controlValueNames, &keyMap[7] }
+    { controlValueNames, &config::keyMap[0] },
+    { controlValueNames, &config::keyMap[1] },
+    { controlValueNames, &config::keyMap[2] },
+    { controlValueNames, &config::keyMap[3] },
+    { controlValueNames, &config::keyMap[4] },
+    { controlValueNames, &config::keyMap[5] },
+    { controlValueNames, &config::keyMap[6] },
+    { controlValueNames, &config::keyMap[7] }
 };
 
 const vector<string> settingNames =
@@ -75,9 +77,9 @@ const vector<string> settingNames =
 
 const vector<Value> settingValues =
 {
-    { { "Off", "On" }, &disableSpriteLimit },
-    { { "Off", "On" }, &screenFiltering    },
-    { { "Off", "On" }, &frameLimiter       }
+    { { "Off", "On" }, &config::disableSpriteLimit },
+    { { "Off", "On" }, &config::screenFiltering    },
+    { { "Off", "On" }, &config::frameLimiter       }
 };
 
 const vector<string> pauseNames =
@@ -110,7 +112,7 @@ void onAppletHook(AppletHookType hook, void *param)
 void runCore(void *args)
 {
     while (!paused)
-        runCycle();
+        core::runCycle();
 }
 
 void audioOutput(void *args)
@@ -118,7 +120,7 @@ void audioOutput(void *args)
     while (!paused)
     {
         for (int i = 0; i < outSamples; i++)
-            ((s16*)audioBuffer.buffer)[i] = audioSample(1.15f);
+            ((s16*)audioBuffer.buffer)[i] = apu::audioSample(1.15f);
         audoutPlayBuffer(&audioBuffer, &audioReleasedBuffer);
     }
 }
@@ -126,7 +128,7 @@ void audioOutput(void *args)
 void startCore()
 {
     paused = false;
-    setTextureFiltering(screenFiltering);
+    setTextureFiltering(config::screenFiltering);
     Thread core, audio;
     threadCreate(&core, runCore, NULL, 0x80000, 0x30, 1);
     threadStart(&core);
@@ -180,7 +182,7 @@ void settingsMenu()
         }
         else if (pressed & KEY_B)
         {
-            saveConfig();
+            config::save();
             return;
         }
         else if (pressed & KEY_X)
@@ -207,13 +209,14 @@ bool fileBrowser()
 
             if (romPath.find(".nes", romPath.length() - 4) != string::npos)
             {
-                if (!loadRom(romPath))
+                int result = core::loadRom(romPath);
+                if (result != 0)
                 {
-                    vector<string> message =
-                    {
-                        "The ROM couldn't be loaded.",
-                        "It probably either has an unsupported mapper or is corrupt."
-                    };
+                    vector<string> message = { "The ROM couldn't be loaded." };
+                    if (result > 2)
+                        message.push_back("It uses an unsupported mapper: " + to_string(result));
+                    else
+                        message.push_back("The file format is invalid.");
 
                     messageScreen("Unable to load ROM", message, true);
                     return false;
@@ -252,11 +255,11 @@ bool pauseMenu()
         {
             if (selection == 1) // Save State
             {
-                saveState();
+                core::saveState();
             }
             else if (selection == 2) // Load State
             {
-                loadState();
+                core::loadState();
             }
             else if (selection == 3) // Settings
             {
@@ -279,7 +282,7 @@ bool pauseMenu()
 int main(int argc, char **argv)
 {
     initRenderer();
-    loadConfig();
+    config::load();
 
     if (!fileBrowser())
     {
@@ -304,10 +307,10 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < 8; i++)
         {
-            if (pressed & ((keyMap[i] == 0) ? defaultKeyMap[i] : BIT(keyMap[i] - 1)))
-                pressKey(i);
-            else if (released & ((keyMap[i] == 0) ? defaultKeyMap[i] : BIT(keyMap[i] - 1)))
-                releaseKey(i);
+            if (pressed & ((config::keyMap[i] == 0) ? defaultKeyMap[i] : BIT(config::keyMap[i] - 1)))
+                core::pressKey(i);
+            else if (released & ((config::keyMap[i] == 0) ? defaultKeyMap[i] : BIT(config::keyMap[i] - 1)))
+                core::releaseKey(i);
         }
 
         if (pressed & defaultKeyMap[8])
@@ -317,13 +320,13 @@ int main(int argc, char **argv)
         }
 
         clearDisplay(0);
-        lockMutex(displayMutex);
-        drawTexture(displayBuffer, 256, 240, 0, false, 256, 0, 768, 720);
-        unlockMutex(displayMutex);
+        mutex::lock(ppu::displayMutex);
+        drawTexture(ppu::displayBuffer, 256, 240, 0, false, 256, 0, 768, 720);
+        mutex::unlock(ppu::displayMutex);
         refreshDisplay();
     }
 
-    closeRom();
+    core::closeRom();
     audoutStopAudioOut();
     audoutExit();
     appletUnhook(&cookie);

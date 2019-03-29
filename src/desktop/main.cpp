@@ -23,6 +23,8 @@
 
 #include "../core.h"
 #include "../config.h"
+#include "../ppu.h"
+#include "../apu.h"
 #include "../mutex.h"
 
 bool requestSave, requestLoad;
@@ -33,16 +35,16 @@ void runCore()
 {
     while (true)
     {
-        runCycle();
+        core::runCycle();
 
         if (requestSave)
         {
-            saveState();
+            core::saveState();
             requestSave = false;
         }
         else if (requestLoad)
         {
-            loadState();
+            core::loadState();
             requestLoad = false;
         }
     }
@@ -50,9 +52,9 @@ void runCore()
 
 void draw()
 {
-    lockMutex(displayMutex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, displayBuffer);
-    unlockMutex(displayMutex);
+    mutex::lock(ppu::displayMutex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, ppu::displayBuffer);
+    mutex::unlock(ppu::displayMutex);
     glBegin(GL_QUADS);
     glTexCoord2i(1, 1); glVertex2f( 1, -1);
     glTexCoord2i(0, 1); glVertex2f(-1, -1);
@@ -67,8 +69,8 @@ void keyDown(unsigned char key, int x, int y)
 {
     for (int i = 0; i < 8; i++)
     {
-        if (key == ((keyMap[i] == 0) ? defaultKeyMap[i] : keyMap[i]))
-            pressKey(i);
+        if (key == ((config::keyMap[i] == 0) ? defaultKeyMap[i] : config::keyMap[i]))
+            core::pressKey(i);
     }
 }
 
@@ -76,8 +78,8 @@ void keyUp(unsigned char key, int x, int y)
 {
     for (int i = 0; i < 8; i++)
     {
-        if (key == ((keyMap[i] == 0) ? defaultKeyMap[i] : keyMap[i]))
-            releaseKey(i);
+        if (key == ((config::keyMap[i] == 0) ? defaultKeyMap[i] : config::keyMap[i]))
+            core::releaseKey(i);
     }
 }
 
@@ -86,7 +88,7 @@ int audioCallback(const void *in, void *out, unsigned long frames,
 {
     int16_t *curOut = (int16_t*)out;
     for (int i = 0; i < frames; i++)
-        *curOut++ = audioSample(2.5f);
+        *curOut++ = apu::audioSample(2.5f);
     return 0;
 }
 
@@ -100,8 +102,8 @@ void onMenuSelect(int selection)
 
 void onExit()
 {
-    closeRom();
-    saveConfig();
+    core::closeRom();
+    config::save();
 }
 
 int main(int argc, char **argv)
@@ -112,10 +114,10 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    if (!loadRom(argv[1]))
+    if (core::loadRom(argv[1]) != 0)
         return 1;
 
-    loadConfig();
+    config::load();
 
     glutInit(&argc, argv);
     glutInitWindowSize(256, 240);
@@ -125,8 +127,8 @@ int main(int argc, char **argv)
     GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, screenFiltering ? GL_LINEAR : GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, screenFiltering ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, config::screenFiltering ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, config::screenFiltering ? GL_LINEAR : GL_NEAREST);
 
     PaStream *stream;
     Pa_Initialize();

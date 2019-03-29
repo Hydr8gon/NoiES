@@ -21,6 +21,11 @@
 #include <string>
 #include <vector>
 
+#include "core.h"
+
+namespace config
+{
+
 int disableSpriteLimit = 0;
 int screenFiltering    = 0;
 int frameLimiter       = 1;
@@ -28,11 +33,11 @@ int keyMap[8];
 
 typedef struct
 {
-    std::string name;
+    string name;
     int *value;
 } Setting;
 
-const std::vector<Setting> settings =
+const vector<Setting> settings =
 {
     { "disableSpriteLimit", &disableSpriteLimit },
     { "screenFiltering",    &screenFiltering    },
@@ -47,17 +52,17 @@ const std::vector<Setting> settings =
     { "keyRight",           &keyMap[7]          }
 };
 
-void loadConfig()
+void load()
 {
     FILE *config = fopen("noies.ini", "r");
     if (!config)
         return;
 
-    // Search for setting names and load the corresponding value when found
+    // Search for setting names in the config file and load their values when found
     char read[256];
     while (fgets(read, 256, config) != NULL)
     {
-        std::string line = read;
+        string line = read;
         for (unsigned int i = 0; i < settings.size(); i++)
         {
             if (line.substr(0, line.rfind("=")) == settings[i].name)
@@ -77,13 +82,13 @@ void loadConfig()
     fclose(config);
 }
 
-void saveConfig()
+void save()
 {
+    // Save all setting names and values to the config file
     FILE *config = fopen("noies.ini", "w");
-
-    // Save all setting names and values to the file
     for (unsigned int i = 0; i < settings.size(); i++)
-        fputs((settings[i].name + "=" + std::to_string(*settings[i].value) +"\n").c_str(), config);
-
+        fputs((settings[i].name + "=" + to_string(*settings[i].value) +"\n").c_str(), config);
     fclose(config);
+}
+
 }
