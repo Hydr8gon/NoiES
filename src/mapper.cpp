@@ -59,12 +59,12 @@ bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType)
     for (unsigned int i = 0; i < stateItems.size(); i++)
         memset(stateItems[i].pointer, 0, stateItems[i].size);
 
-    // Move the ROM into its own memory
+    // Move the ROM into its own memory, with an extra 8 KB for VRAM if no VROM is present
     uint16_t start = ftell(romFile);
     fseek(romFile, 0, SEEK_END);
     uint32_t size = ftell(romFile) - start;
     delete[] rom;
-    rom = new uint8_t[size];
+    rom = new uint8_t[size + ((vromAddress == size) ? 0x2000 : 0)];
     fseek(romFile, start, SEEK_SET);
     fread(rom, 1, size, romFile);
     fclose(romFile);

@@ -64,6 +64,7 @@ void reset()
     flags         = 0x24;
     stackPointer  = 0xFF;
     interrupts[1] = true;
+    inputMask     = 0;
 }
 
 uint8_t memoryRead(uint8_t *src)

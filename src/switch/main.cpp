@@ -30,6 +30,7 @@ AudioOutBuffer audioBuffer, *audioReleasedBuffer;
 const u32 defaultKeyMap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L | KEY_R };
 
 bool paused;
+AppletHookCookie cookie;
 
 const vector<string> controlNames =
 {
@@ -128,12 +129,26 @@ void audioOutput(void *args)
 void startCore()
 {
     paused = false;
+    appletLockExit();
+    appletHook(&cookie, onAppletHook, NULL);
+    audoutInitialize();
+    audoutStartAudioOut();
+    setupAudioBuffer();
     setTextureFiltering(config::screenFiltering);
     Thread core, audio;
     threadCreate(&core, runCore, NULL, 0x80000, 0x30, 1);
     threadStart(&core);
     threadCreate(&audio, audioOutput, NULL, 0x80000, 0x30, 2);
     threadStart(&audio);
+}
+
+void stopCore()
+{
+    paused = true;
+    audoutStopAudioOut();
+    audoutExit();
+    appletUnhook(&cookie);
+    appletUnlockExit();
 }
 
 void controlsMenu()
@@ -244,7 +259,8 @@ bool fileBrowser()
 
 bool pauseMenu()
 {
-    paused = true;
+    stopCore();
+
     int selection = 0;
 
     while (paused)
@@ -267,6 +283,7 @@ bool pauseMenu()
             }
             else if (selection == 4) // File Browser
             {
+                core::closeRom();
                 if (!fileBrowser())
                     return false;
             }
@@ -289,13 +306,6 @@ int main(int argc, char **argv)
         deinitRenderer();
         return 0;
     }
-
-    appletLockExit();
-    AppletHookCookie cookie;
-    appletHook(&cookie, onAppletHook, NULL);
-    audoutInitialize();
-    audoutStartAudioOut();
-    setupAudioBuffer();
 
     startCore();
 
@@ -327,10 +337,7 @@ int main(int argc, char **argv)
     }
 
     core::closeRom();
-    audoutStopAudioOut();
-    audoutExit();
-    appletUnhook(&cookie);
-    appletUnlockExit();
+    stopCore();
     deinitRenderer();
     return 0;
 }
