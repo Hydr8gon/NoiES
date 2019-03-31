@@ -66,15 +66,67 @@ void reset()
     interrupts[1] = true;
 }
 
-// TODO remove
-uint16_t memoryMirror(uint16_t address)
+uint8_t memoryRead(uint8_t *src)
 {
+    // Just read the value if it's not in memory; it's probably a register
+    if (src < memory || src > memory + sizeof(memory))
+        return *src;
+
+    uint16_t address = src - memory;
+
     // Get the real location of a mirrored address in memory
     if (address >= 0x0800 && address < 0x2000)
         address %= 0x0800;
     else if (address >= 0x2008 && address < 0x4000)
         address = 0x2000 + address % 8;
-    return address;
+
+    if (address == 0x4016) // JOYPAD1
+    {
+        // Read button status 1 bit at a time
+        uint8_t value = (inputMask & (1 << inputShift)) ? 0x41 : 0x40;
+        ++inputShift %= 8;
+        return value;
+    }
+
+    // Get a value from a memory-mapped register if needed
+    if ((address >= 0x2000 && address < 0x2008) || address == 0x4014)
+        return ppu::registerRead(address);
+    else if (address >= 0x4000 && address < 0x4018)
+        return apu::registerRead(address);
+    else
+        return memory[address];
+}
+
+void memoryWrite(uint8_t *dst, uint8_t src)
+{
+    // Just write the value if it's not in memory; it's probably a register
+    if (dst < memory || dst > memory + sizeof(memory))
+    {
+        *dst = src;
+        return;
+    }
+
+    uint16_t address = dst - memory;
+
+    // Get the real location of a mirrored address in memory
+    if (address >= 0x0800 && address < 0x2000)
+        address %= 0x0800;
+    else if (address >= 0x2008 && address < 0x4000)
+        address = 0x2000 + address % 8;
+
+    // Pass the value to a memory-mapped register if needed
+    if ((address >= 0x2000 && address < 0x2008) || address == 0x4014)
+        ppu::registerWrite(address, src);
+    else if (address >= 0x4000 && address < 0x4018)
+        apu::registerWrite(address, src);
+    else if (address >= 0x8000)
+        mapper::registerWrite(address, src);
+    else
+        memory[address] = src;
+
+    // Suspend the CPU on a DMA transfer with an extra cycle on odd CPU cycles
+    if (address == 0x4014)
+        targetCycles += (core::globalCycles == 3) ? 514 : 513;
 }
 
 uint8_t *zeroPage()
@@ -174,10 +226,10 @@ void se_(uint8_t flag)
     flags |= flag;
 }
 
-void ph_(uint8_t value)
+void ph_(uint8_t src)
 {
     // Push a value to the stack
-    memory[0x100 + stackPointer--] = value;
+    memory[0x100 + stackPointer--] = src;
 }
 
 void pl_(uint8_t *dst)
@@ -196,41 +248,45 @@ void pl_(uint8_t *dst)
     (*dst == 0)   ? se_(0x02) : cl_(0x02); // Z
 }
 
-void adc(uint8_t value)
+void adc(uint8_t *src)
 {
     // Add with carry
-    uint8_t oldAccum = accumulator;
+    uint8_t before = accumulator;
+    uint8_t value = memoryRead(src);
     accumulator += value + (flags & 0x01);
 
-    (accumulator & 0x80)                                                      ? se_(0x80) : cl_(0x80); // N
-    (accumulator == 0)                                                        ? se_(0x02) : cl_(0x02); // Z
-    ((value & 0x80) == (oldAccum & 0x80) && (flags & 0x80) != (value & 0x80)) ? se_(0x40) : cl_(0x40); // V
-    (oldAccum > accumulator || value + (flags & 0x01) == 0x100)               ? se_(0x01) : cl_(0x01); // C
+    (accumulator & 0x80)                                                    ? se_(0x80) : cl_(0x80); // N
+    (accumulator == 0)                                                      ? se_(0x02) : cl_(0x02); // Z
+    ((value & 0x80) == (before & 0x80) && (flags & 0x80) != (value & 0x80)) ? se_(0x40) : cl_(0x40); // V
+    (before > accumulator || value + (flags & 0x01) == 0x100)               ? se_(0x01) : cl_(0x01); // C
 }
 
-void _and(uint8_t value)
+void _and(uint8_t *src)
 {
     // Bitwise and
-    accumulator &= value;
+    accumulator &= memoryRead(src);
 
     (accumulator & 0x80) ? se_(0x80) : cl_(0x80); // N
     (accumulator == 0)   ? se_(0x02) : cl_(0x02); // Z
 }
 
-void asl(uint8_t *value)
+void asl(uint8_t *dst)
 {
     // Arithmetic shift left
-    uint8_t oldValue = *value;
-    *value <<= 1;
+    uint8_t before = memoryRead(dst);
+    uint8_t after = before << 1;
+    memoryWrite(dst, after);
 
-    (*value & 0x80)   ? se_(0x80) : cl_(0x80); // N
-    (*value == 0)     ? se_(0x02) : cl_(0x02); // Z
-    (oldValue & 0x80) ? se_(0x01) : cl_(0x01); // C
+    (after & 0x80)  ? se_(0x80) : cl_(0x80); // N
+    (after == 0)    ? se_(0x02) : cl_(0x02); // Z
+    (before & 0x80) ? se_(0x01) : cl_(0x01); // C
 }
 
-void bit(uint8_t value)
+void bit(uint8_t *src)
 {
     // Test bits
+    uint8_t value = memoryRead(src);
+
     (value & 0x80)               ? se_(0x80) : cl_(0x80); // N
     (value & 0x40)               ? se_(0x40) : cl_(0x40); // V
     ((accumulator & value) == 0) ? se_(0x02) : cl_(0x02); // Z
@@ -254,99 +310,90 @@ void brk()
     // Break
     if (!(flags & 0x04))
     {
-        se_(0x10);
+        se_(0x10); // B
         interrupts[2] = true;
     }
     programCounter++;
 }
 
-void cp_(uint8_t reg, uint8_t value)
+void cp_(uint8_t reg, uint8_t *src)
 {
     // Compare a register to a value
+    uint8_t value = memoryRead(src);
+
     ((reg - value) & 0x80) ? se_(0x80) : cl_(0x80); // N
     (reg == value)         ? se_(0x02) : cl_(0x02); // Z
     (reg >= value)         ? se_(0x01) : cl_(0x01); // C
 }
 
-void de_(uint8_t *value)
+void de_(uint8_t *dst)
 {
     // Decrement a value
-    (*value)--;
+    uint8_t value = memoryRead(dst) - 1;
+    memoryWrite(dst, value);
 
-    (*value & 0x80) ? se_(0x80) : cl_(0x80); // N
-    (*value == 0)   ? se_(0x02) : cl_(0x02); // Z
+    (value & 0x80) ? se_(0x80) : cl_(0x80); // N
+    (value == 0)   ? se_(0x02) : cl_(0x02); // Z
 }
 
-void eor(uint8_t value)
+void eor(uint8_t *src)
 {
     // Bitwise exclusive or
-    accumulator ^= value;
+    accumulator ^= memoryRead(src);
 
     (accumulator & 0x80) ? se_(0x80) : cl_(0x80); // N
     (accumulator == 0)   ? se_(0x02) : cl_(0x02); // Z
 }
 
-void in_(uint8_t *value)
+void in_(uint8_t *dst)
 {
     // Increment a value
-    (*value)++;
+    uint8_t value = memoryRead(dst) + 1;
+    memoryWrite(dst, value);
 
-    (*value & 0x80) ? se_(0x80) : cl_(0x80); // N
-    (*value == 0)   ? se_(0x02) : cl_(0x02); // Z
+    (value & 0x80) ? se_(0x80) : cl_(0x80); // N
+    (value == 0)   ? se_(0x02) : cl_(0x02); // Z
 }
 
-void jmp(uint8_t *address)
+void jmp(uint8_t *location)
 {
     // Jump
-    programCounter = address - memory - 1;
+    programCounter = location - memory - 1;
 }
 
-void jsr(uint8_t *address)
+void jsr(uint8_t *location)
 {
     // Jump to subroutine
     ph_(programCounter >> 8);
     ph_(programCounter);
-    jmp(address);
+    jmp(location);
 }
 
-void ld_(uint8_t *dst, uint8_t *src)
+void ld_(uint8_t *reg, uint8_t *src)
 {
-    uint16_t address = memoryMirror(src - memory);
-
     // Load a register
-    if ((address >= 0x2000 && address < 0x2008) || address == 0x4014)
-        *dst = ppu::registerRead(address);
-    else if (address >= 0x4000 && address < 0x4018)
-        *dst = apu::registerRead(address);
-    else
-        *dst = memory[address];
+    *reg = memoryRead(src);
 
-    if (address == 0x4016) // JOYPAD1
-    {
-        // Read button status 1 bit at a time
-        *dst = (inputMask & (1 << inputShift)) ? 0x41 : 0x40;
-        ++inputShift %= 8;
-    }
-
-    (*dst & 0x80) ? se_(0x80) : cl_(0x80); // N
-    (*dst == 0)   ? se_(0x02) : cl_(0x02); // Z
+    (*reg & 0x80) ? se_(0x80) : cl_(0x80); // N
+    (*reg == 0)   ? se_(0x02) : cl_(0x02); // Z
 }
 
-void lsr(uint8_t *value)
+void lsr(uint8_t *dst)
 {
     // Logical shift right
-    uint8_t oldValue = *value;
-    *value >>= 1;
+    uint8_t before = memoryRead(dst);
+    uint8_t after = before >> 1;
+    memoryWrite(dst, after);
 
-    (*value & 0x80)   ? se_(0x80) : cl_(0x80); // N
-    (*value == 0)     ? se_(0x02) : cl_(0x02); // Z
-    (oldValue & 0x01) ? se_(0x01) : cl_(0x01); // C
+    (after & 0x80)  ? se_(0x80) : cl_(0x80); // N
+    (after == 0)    ? se_(0x02) : cl_(0x02); // Z
+    (before & 0x01) ? se_(0x01) : cl_(0x01); // C
 }
 
-void ora(uint8_t value)
+void ora(uint8_t *src)
 {
     // Bitwise or
-    accumulator |= value;
+    accumulator |= memoryRead(src);
 
     (accumulator & 0x80) ? se_(0x80) : cl_(0x80); // N
     (accumulator == 0)   ? se_(0x02) : cl_(0x02); // Z
@@ -361,26 +408,28 @@ void t__(uint8_t *src, uint8_t *dst)
     (*dst == 0)   ? se_(0x02) : cl_(0x02); // Z
 }
 
-void rol(uint8_t *value)
+void rol(uint8_t *dst)
 {
     // Rotate left
-    uint8_t oldValue = *value;
-    *value = (*value << 1) | (flags & 0x01);
+    uint8_t before = memoryRead(dst);
+    uint8_t after = (before << 1) | (flags & 0x01);
+    memoryWrite(dst, after);
 
-    (*value & 0x80)   ? se_(0x80) : cl_(0x80); // N
-    (*value == 0)     ? se_(0x02) : cl_(0x02); // Z
-    (oldValue & 0x80) ? se_(0x01) : cl_(0x01); // C
+    (after & 0x80)  ? se_(0x80) : cl_(0x80); // N
+    (after == 0)    ? se_(0x02) : cl_(0x02); // Z
+    (before & 0x80) ? se_(0x01) : cl_(0x01); // C
 }
 
-void ror(uint8_t *value)
+void ror(uint8_t *dst)
 {
     // Rotate right
-    uint8_t oldValue = *value;
-    *value = (*value >> 1) | ((flags & 0x01) << 7);
+    uint8_t before = memoryRead(dst);
+    uint8_t after = (before >> 1) | ((flags & 0x01) << 7);
+    memoryWrite(dst, after);
 
-    (*value & 0x80)   ? se_(0x80) : cl_(0x80); // N
-    (*value == 0)     ? se_(0x02) : cl_(0x02); // Z
-    (oldValue & 0x01) ? se_(0x01) : cl_(0x01); // C
+    (after & 0x80)  ? se_(0x80) : cl_(0x80); // N
+    (after == 0)    ? se_(0x02) : cl_(0x02); // Z
+    (before & 0x01) ? se_(0x01) : cl_(0x01); // C
 }
 
 void rts()
@@ -398,35 +447,23 @@ void rti()
     programCounter--;
 }
 
-void sbc(uint8_t value)
+void sbc(uint8_t *src)
 {
     // Subtract with carry
-    uint8_t oldAccum = accumulator;
+    uint8_t before = accumulator;
+    uint8_t value = memoryRead(src);
     accumulator -= value + !(flags & 0x01);
 
-    (accumulator & 0x80)                                                      ? se_(0x80) : cl_(0x80); // N
-    (accumulator == 0)                                                        ? se_(0x02) : cl_(0x02); // Z
-    ((value & 0x80) != (oldAccum & 0x80) && (flags & 0x80) == (value & 0x80)) ? se_(0x40) : cl_(0x40); // V
-    (oldAccum >= accumulator && value + !(flags & 0x01) != 0x100)             ? se_(0x01) : cl_(0x01); // C
+    (accumulator & 0x80)                                                    ? se_(0x80) : cl_(0x80); // N
+    (accumulator == 0)                                                      ? se_(0x02) : cl_(0x02); // Z
+    ((value & 0x80) != (before & 0x80) && (flags & 0x80) == (value & 0x80)) ? se_(0x40) : cl_(0x40); // V
+    (before >= accumulator && value + !(flags & 0x01) != 0x100)             ? se_(0x01) : cl_(0x01); // C
 }
 
-void st_(uint8_t src, uint8_t *dst)
+void st_(uint8_t reg, uint8_t *dst)
 {
-    uint16_t address = memoryMirror(dst - memory);
-
     // Store a register
-    if ((address >= 0x2000 && address < 0x2008) || address == 0x4014)
-        ppu::registerWrite(address, src);
-    else if (address >= 0x4000 && address < 0x4018)
-        apu::registerWrite(address, src);
-    else if (address >= 0x8000)
-        mapper::registerWrite(address, src);
-    else
-        memory[address] = src;
-
-    // Suspend CPU on a DMA transfer with an extra cycle on odd CPU cycles
-    if (address == 0x4014)
-        targetCycles += (core::globalCycles == 3) ? 514 : 513;
+    memoryWrite(dst, reg);
 }
 
 void runCycle()
@@ -465,23 +502,23 @@ void runCycle()
     // Decode opcode
     switch (memory[programCounter])
     {
-        case 0x69: adc(*immediate());     targetCycles += 2; break; // ADC immediate
-        case 0x65: adc(*zeroPage());      targetCycles += 3; break; // ADC zero page
-        case 0x75: adc(*zeroPageX());     targetCycles += 4; break; // ADC zero page X
-        case 0x6D: adc(*absolute());      targetCycles += 4; break; // ADC absolute
-        case 0x7D: adc(*absoluteX(true)); targetCycles += 4; break; // ADC absolute X
-        case 0x79: adc(*absoluteY(true)); targetCycles += 4; break; // ADC absolute Y
-        case 0x61: adc(*indirectX());     targetCycles += 6; break; // ADC indirect X
-        case 0x71: adc(*indirectY(true)); targetCycles += 5; break; // ADC indirect Y
+        case 0x69: adc(immediate());     targetCycles += 2; break; // ADC immediate
+        case 0x65: adc(zeroPage());      targetCycles += 3; break; // ADC zero page
+        case 0x75: adc(zeroPageX());     targetCycles += 4; break; // ADC zero page X
+        case 0x6D: adc(absolute());      targetCycles += 4; break; // ADC absolute
+        case 0x7D: adc(absoluteX(true)); targetCycles += 4; break; // ADC absolute X
+        case 0x79: adc(absoluteY(true)); targetCycles += 4; break; // ADC absolute Y
+        case 0x61: adc(indirectX());     targetCycles += 6; break; // ADC indirect X
+        case 0x71: adc(indirectY(true)); targetCycles += 5; break; // ADC indirect Y
 
-        case 0x29: _and(*immediate());     targetCycles += 2; break; // AND immediate
-        case 0x25: _and(*zeroPage());      targetCycles += 3; break; // AND zero page
-        case 0x35: _and(*zeroPageX());     targetCycles += 4; break; // AND zero page X
-        case 0x2D: _and(*absolute());      targetCycles += 4; break; // AND absolute
-        case 0x3D: _and(*absoluteX(true)); targetCycles += 4; break; // AND absolute X
-        case 0x39: _and(*absoluteY(true)); targetCycles += 4; break; // AND absolute Y
-        case 0x21: _and(*indirectX());     targetCycles += 6; break; // AND indirect X
-        case 0x31: _and(*indirectY(true)); targetCycles += 5; break; // AND indirect Y
+        case 0x29: _and(immediate());     targetCycles += 2; break; // AND immediate
+        case 0x25: _and(zeroPage());      targetCycles += 3; break; // AND zero page
+        case 0x35: _and(zeroPageX());     targetCycles += 4; break; // AND zero page X
+        case 0x2D: _and(absolute());      targetCycles += 4; break; // AND absolute
+        case 0x3D: _and(absoluteX(true)); targetCycles += 4; break; // AND absolute X
+        case 0x39: _and(absoluteY(true)); targetCycles += 4; break; // AND absolute Y
+        case 0x21: _and(indirectX());     targetCycles += 6; break; // AND indirect X
+        case 0x31: _and(indirectY(true)); targetCycles += 5; break; // AND indirect Y
 
         case 0x0A: asl(&accumulator);     targetCycles += 2; break; // ASL accumulator
         case 0x06: asl(zeroPage());       targetCycles += 5; break; // ASL zero page
@@ -489,8 +526,8 @@ void runCycle()
         case 0x0E: asl(absolute());       targetCycles += 6; break; // ASL absolute
         case 0x1E: asl(absoluteX(false)); targetCycles += 7; break; // ASL absolute X
 
-        case 0x24: bit(*zeroPage()); targetCycles += 3; break; // BIT zero page
-        case 0x2C: bit(*absolute()); targetCycles += 4; break; // BIT absolute
+        case 0x24: bit(zeroPage()); targetCycles += 3; break; // BIT zero page
+        case 0x2C: bit(absolute()); targetCycles += 4; break; // BIT absolute
 
         case 0x10: b__(!(flags & 0x80)); targetCycles += 2; break; // BPL
         case 0x30: b__( (flags & 0x80)); targetCycles += 2; break; // BMI
@@ -503,36 +540,36 @@ void runCycle()
 
         case 0x00: brk(); break; // BRK
 
-        case 0xC9: cp_(accumulator, *immediate());     targetCycles += 2; break; // CMP immediate
-        case 0xC5: cp_(accumulator, *zeroPage());      targetCycles += 3; break; // CMP zero page
-        case 0xD5: cp_(accumulator, *zeroPageX());     targetCycles += 4; break; // CMP zero page X
-        case 0xCD: cp_(accumulator, *absolute());      targetCycles += 4; break; // CMP absolute
-        case 0xDD: cp_(accumulator, *absoluteX(true)); targetCycles += 4; break; // CMP absolute X
-        case 0xD9: cp_(accumulator, *absoluteY(true)); targetCycles += 4; break; // CMP absolute Y
-        case 0xC1: cp_(accumulator, *indirectX());     targetCycles += 6; break; // CMP indirect X
-        case 0xD1: cp_(accumulator, *indirectY(true)); targetCycles += 5; break; // CMP indirect Y
+        case 0xC9: cp_(accumulator, immediate());     targetCycles += 2; break; // CMP immediate
+        case 0xC5: cp_(accumulator, zeroPage());      targetCycles += 3; break; // CMP zero page
+        case 0xD5: cp_(accumulator, zeroPageX());     targetCycles += 4; break; // CMP zero page X
+        case 0xCD: cp_(accumulator, absolute());      targetCycles += 4; break; // CMP absolute
+        case 0xDD: cp_(accumulator, absoluteX(true)); targetCycles += 4; break; // CMP absolute X
+        case 0xD9: cp_(accumulator, absoluteY(true)); targetCycles += 4; break; // CMP absolute Y
+        case 0xC1: cp_(accumulator, indirectX());     targetCycles += 6; break; // CMP indirect X
+        case 0xD1: cp_(accumulator, indirectY(true)); targetCycles += 5; break; // CMP indirect Y
 
-        case 0xE0: cp_(registerX, *immediate()); targetCycles += 2; break; // CPX immediate
-        case 0xE4: cp_(registerX, *zeroPage());  targetCycles += 3; break; // CPX zero page
-        case 0xEC: cp_(registerX, *absolute());  targetCycles += 4; break; // CPX absolute
+        case 0xE0: cp_(registerX, immediate()); targetCycles += 2; break; // CPX immediate
+        case 0xE4: cp_(registerX, zeroPage());  targetCycles += 3; break; // CPX zero page
+        case 0xEC: cp_(registerX, absolute());  targetCycles += 4; break; // CPX absolute
 
-        case 0xC0: cp_(registerY, *immediate()); targetCycles += 2; break; // CPY immediate
-        case 0xC4: cp_(registerY, *zeroPage());  targetCycles += 3; break; // CPY zero page
-        case 0xCC: cp_(registerY, *absolute());  targetCycles += 4; break; // CPY absolute
+        case 0xC0: cp_(registerY, immediate()); targetCycles += 2; break; // CPY immediate
+        case 0xC4: cp_(registerY, zeroPage());  targetCycles += 3; break; // CPY zero page
+        case 0xCC: cp_(registerY, absolute());  targetCycles += 4; break; // CPY absolute
 
         case 0xC6: de_(zeroPage());       targetCycles += 5; break; // DEC zero page
         case 0xD6: de_(zeroPageX());      targetCycles += 6; break; // DEC zero page X
         case 0xCE: de_(absolute());       targetCycles += 6; break; // DEC absolute
         case 0xDE: de_(absoluteX(false)); targetCycles += 7; break; // DEC absolute X
         
-        case 0x49: eor(*immediate());     targetCycles += 2; break; // EOR immediate
-        case 0x45: eor(*zeroPage());      targetCycles += 3; break; // EOR zero page
-        case 0x55: eor(*zeroPageX());     targetCycles += 4; break; // EOR zero page X
-        case 0x4D: eor(*absolute());      targetCycles += 4; break; // EOR absolute
-        case 0x5D: eor(*absoluteX(true)); targetCycles += 4; break; // EOR absolute X
-        case 0x59: eor(*absoluteY(true)); targetCycles += 4; break; // EOR absolute Y
-        case 0x41: eor(*indirectX());     targetCycles += 6; break; // EOR indirect X
-        case 0x51: eor(*indirectY(true)); targetCycles += 5; break; // EOR indirect Y
+        case 0x49: eor(immediate());     targetCycles += 2; break; // EOR immediate
+        case 0x45: eor(zeroPage());      targetCycles += 3; break; // EOR zero page
+        case 0x55: eor(zeroPageX());     targetCycles += 4; break; // EOR zero page X
+        case 0x4D: eor(absolute());      targetCycles += 4; break; // EOR absolute
+        case 0x5D: eor(absoluteX(true)); targetCycles += 4; break; // EOR absolute X
+        case 0x59: eor(absoluteY(true)); targetCycles += 4; break; // EOR absolute Y
+        case 0x41: eor(indirectX());     targetCycles += 6; break; // EOR indirect X
+        case 0x51: eor(indirectY(true)); targetCycles += 5; break; // EOR indirect Y
 
         case 0x18: cl_(0x01); targetCycles += 2; break; // CLC
         case 0x38: se_(0x01); targetCycles += 2; break; // SEC
@@ -581,14 +618,14 @@ void runCycle()
 
         case 0xEA: targetCycles += 2; break; // NOP
 
-        case 0x09: ora(*immediate());     targetCycles += 2; break; // ORA immediate
-        case 0x05: ora(*zeroPage());      targetCycles += 3; break; // ORA zero page
-        case 0x15: ora(*zeroPageX());     targetCycles += 4; break; // ORA zero page X
-        case 0x0D: ora(*absolute());      targetCycles += 4; break; // ORA absolute
-        case 0x1D: ora(*absoluteX(true)); targetCycles += 4; break; // ORA absolute X
-        case 0x19: ora(*absoluteY(true)); targetCycles += 4; break; // ORA absolute Y
-        case 0x01: ora(*indirectX());     targetCycles += 6; break; // ORA indirect X
-        case 0x11: ora(*indirectY(true)); targetCycles += 5; break; // ORA indirect Y
+        case 0x09: ora(immediate());     targetCycles += 2; break; // ORA immediate
+        case 0x05: ora(zeroPage());      targetCycles += 3; break; // ORA zero page
+        case 0x15: ora(zeroPageX());     targetCycles += 4; break; // ORA zero page X
+        case 0x0D: ora(absolute());      targetCycles += 4; break; // ORA absolute
+        case 0x1D: ora(absoluteX(true)); targetCycles += 4; break; // ORA absolute X
+        case 0x19: ora(absoluteY(true)); targetCycles += 4; break; // ORA absolute Y
+        case 0x01: ora(indirectX());     targetCycles += 6; break; // ORA indirect X
+        case 0x11: ora(indirectY(true)); targetCycles += 5; break; // ORA indirect Y
 
         case 0xAA: t__(&accumulator, &registerX); targetCycles += 2; break; // TAX
         case 0x8A: t__(&registerX, &accumulator); targetCycles += 2; break; // TXA
@@ -615,14 +652,14 @@ void runCycle()
 
         case 0x60: rts(); targetCycles += 6; break; // RTS
 
-        case 0xE9: sbc(*immediate());     targetCycles += 2; break; // SBC immediate
-        case 0xE5: sbc(*zeroPage());      targetCycles += 3; break; // SBC zero page
-        case 0xF5: sbc(*zeroPageX());     targetCycles += 4; break; // SBC zero page X
-        case 0xED: sbc(*absolute());      targetCycles += 4; break; // SBC absolute
-        case 0xFD: sbc(*absoluteX(true)); targetCycles += 4; break; // SBC absolute X
-        case 0xF9: sbc(*absoluteY(true)); targetCycles += 4; break; // SBC absolute Y
-        case 0xE1: sbc(*indirectX());     targetCycles += 6; break; // SBC indirect X
-        case 0xF1: sbc(*indirectY(true)); targetCycles += 5; break; // SBC indirect Y
+        case 0xE9: sbc(immediate());     targetCycles += 2; break; // SBC immediate
+        case 0xE5: sbc(zeroPage());      targetCycles += 3; break; // SBC zero page
+        case 0xF5: sbc(zeroPageX());     targetCycles += 4; break; // SBC zero page X
+        case 0xED: sbc(absolute());      targetCycles += 4; break; // SBC absolute
+        case 0xFD: sbc(absoluteX(true)); targetCycles += 4; break; // SBC absolute X
+        case 0xF9: sbc(absoluteY(true)); targetCycles += 4; break; // SBC absolute Y
+        case 0xE1: sbc(indirectX());     targetCycles += 6; break; // SBC indirect X
+        case 0xF1: sbc(indirectY(true)); targetCycles += 5; break; // SBC indirect Y
 
         case 0x85: st_(accumulator, zeroPage());       targetCycles += 3; break; // STA zero page
         case 0x95: st_(accumulator, zeroPageX());      targetCycles += 4; break; // STA zero page X
