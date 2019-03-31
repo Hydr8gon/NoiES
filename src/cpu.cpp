@@ -115,6 +115,14 @@ void memoryWrite(uint8_t *dst, uint8_t src)
     else if (address >= 0x2008 && address < 0x4000)
         address = 0x2000 + address % 8;
 
+    if (address == 0x4016) // JOYPAD1
+    {
+        // Reset the input shift when the strobe bit is set
+        if (src & 0x01)
+            inputShift = 0;
+        return;
+    }
+
     // Pass the value to a memory-mapped register if needed
     if ((address >= 0x2000 && address < 0x2008) || address == 0x4014)
         ppu::registerWrite(address, src);
