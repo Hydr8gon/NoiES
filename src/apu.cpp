@@ -30,9 +30,9 @@ float pulseWaves[2];
 uint16_t pulseFreqs[2];
 uint16_t pulseBaseFreqs[2];
 uint8_t pulseLengths[2];
-uint8_t envelopePeriods[2];
-uint8_t envelopeDividers[2];
-uint8_t envelopeDecays[2];
+uint8_t pulseEnvPeriods[2];
+uint8_t pulseEnvDividers[2];
+uint8_t pulseEnvDecays[2];
 uint8_t sweepPeriods[2];
 uint8_t sweepDividers[2];
 uint8_t sweepShifts[2];
@@ -46,6 +46,15 @@ uint8_t triangleLength;
 uint8_t linearCounter;
 uint8_t linearReload;
 uint8_t triangleFlags;
+
+float noiseWave;
+uint16_t noisePeriod;
+uint16_t noiseShift;
+uint8_t noiseLength;
+uint8_t noiseEnvPeriod;
+uint8_t noiseEnvDivider;
+uint8_t noiseEnvDecay;
+uint8_t noiseFlags;
 
 uint16_t frameCounter;
 uint8_t frameCounterFlags;
@@ -63,15 +72,20 @@ const uint8_t triangleSteps[] =
      0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15
 };
 
+const uint16_t noisePeriods[] =
+{
+    4, 8, 16, 32, 64, 96, 128, 160, 202, 254, 380, 508, 762, 1016, 2034, 4068
+};
+
 const vector<core::StateItem> stateItems =
 {
     { pulseWaves,         sizeof(pulseWaves)        },
     { pulseFreqs,         sizeof(pulseFreqs)        },
     { pulseBaseFreqs,     sizeof(pulseBaseFreqs)    },
     { pulseLengths,       sizeof(pulseLengths)      },
-    { envelopePeriods,    sizeof(envelopePeriods)   },
-    { envelopeDividers,   sizeof(envelopeDividers)  },
-    { envelopeDecays,     sizeof(envelopeDecays)    },
+    { pulseEnvPeriods,    sizeof(pulseEnvPeriods)   },
+    { pulseEnvDividers,   sizeof(pulseEnvDividers)  },
+    { pulseEnvDecays,     sizeof(pulseEnvDecays)    },
     { sweepPeriods,       sizeof(sweepPeriods)      },
     { sweepDividers,      sizeof(sweepDividers)     },
     { sweepShifts,        sizeof(sweepShifts)       },
@@ -84,6 +98,14 @@ const vector<core::StateItem> stateItems =
     { &linearCounter,     sizeof(linearCounter)     },
     { &linearReload,      sizeof(linearReload)      },
     { &triangleFlags,     sizeof(triangleFlags)     },
+    { &noiseWave,         sizeof(noiseWave)         },
+    { &noisePeriod,       sizeof(noisePeriod)       },
+    { &noiseShift,        sizeof(noiseShift)        },
+    { &noiseLength,       sizeof(noiseLength)       },
+    { &noiseEnvPeriod,    sizeof(noiseEnvPeriod)    },
+    { &noiseEnvDivider,   sizeof(noiseEnvDivider)   },
+    { &noiseEnvDecay,     sizeof(noiseEnvDecay)     },
+    { &noiseFlags,        sizeof(noiseFlags)        },
     { &frameCounter,      sizeof(frameCounter)      },
     { &frameCounterFlags, sizeof(frameCounterFlags) },
     { &status,            sizeof(status)            }
@@ -104,7 +126,7 @@ int16_t audioSample(float pitch)
             (dutyCycles[i] == 1 && pulseWaves[i] <  pulseFreqs[i] / 4) ||
             (dutyCycles[i] == 2 && pulseWaves[i] <  pulseFreqs[i] / 2) ||
             (dutyCycles[i] == 3 && pulseWaves[i] >= pulseFreqs[i] / 4))
-            out += 0x200 * ((pulseFlags[i] & 0x10) ? envelopePeriods[i] : envelopeDecays[i]);
+            out += 0x200 * ((pulseFlags[i] & 0x10) ? pulseEnvPeriods[i] : pulseEnvDecays[i]);
     }
 
     // Generate the triangle wave
@@ -115,6 +137,17 @@ int16_t audioSample(float pitch)
     uint8_t step = (triangleWave / (triangleFreq + 1)) * 32;
     out += 0x243 * triangleSteps[step];
 
+    // Generate the noise channel's pseudo-random 1-bit noise
+    noiseWave += pitch;
+    if (noiseWave >= noisePeriod)
+    {
+        uint8_t bit = (noiseFlags & 0x80) ? (noiseShift & 0x40) >> 6 : (noiseShift & 0x02) >> 1;
+        noiseShift = (noiseShift >> 1) | (((noiseShift & 0x01) ^ bit) << 14);
+        noiseWave = 0;
+    }
+    if (!(noiseShift & 0x01) && noiseLength != 0)
+        out += 0x150 * ((noiseFlags & 0x10) ? noiseEnvPeriod : noiseEnvDecay);
+
     return out;
 }
 
@@ -123,6 +156,9 @@ void reset()
     // Clear the state items
     for (unsigned int i = 0; i < stateItems.size(); i++)
         memset(stateItems[i].pointer, 0, stateItems[i].size);
+
+    // Set default values
+    noiseShift = 1;
 }
 
 void quarterFrame()
@@ -133,25 +169,25 @@ void quarterFrame()
         if (pulseFlags[i] & 0x01)
         {
             // Reload the divider and decay values
-            envelopeDividers[i] = envelopePeriods[i];
-            envelopeDecays[i] = 0x0F;
+            pulseEnvDividers[i] = pulseEnvPeriods[i];
+            pulseEnvDecays[i] = 0x0F;
             pulseFlags[i] &= ~0x01;
         }
         else
         {
             // Clock the dividers
-            if (envelopeDividers[i] == 0)
+            if (pulseEnvDividers[i] == 0)
             {
                 // Decay and reload the divider
-                if (envelopeDecays[i] != 0)
-                    envelopeDecays[i]--;
+                if (pulseEnvDecays[i] != 0)
+                    pulseEnvDecays[i]--;
                 else if (pulseFlags[i] & 0x20) // Loop flag
-                    envelopeDecays[i] = 0x0F;
-                envelopeDividers[i] = envelopePeriods[i];
+                    pulseEnvDecays[i] = 0x0F;
+                pulseEnvDividers[i] = pulseEnvPeriods[i];
             }
             else
             {
-                envelopeDividers[i]--;
+                pulseEnvDividers[i]--;
             }
         }
     }
@@ -163,6 +199,32 @@ void quarterFrame()
         linearCounter--;
     if (!(triangleFlags & 0x80)) // Control flag
         triangleFlags &= ~0x01;
+
+    // Clock the noise envelope
+    if (noiseFlags & 0x01)
+    {
+        // Reload the divider and decay values
+        noiseEnvDivider = noiseEnvPeriod;
+        noiseEnvDecay = 0x0F;
+        noiseFlags &= ~0x01;
+    }
+    else
+    {
+        // Clock the dividers
+        if (noiseEnvDivider == 0)
+        {
+            // Decay and reload the divider
+            if (noiseEnvDecay != 0)
+                noiseEnvDecay--;
+            else if (noiseFlags & 0x20) // Loop flag
+                noiseEnvDecay = 0x0F;
+            noiseEnvDivider = noiseEnvPeriod;
+        }
+        else
+        {
+            noiseEnvDivider--;
+        }
+    }
 }
 
 void halfFrame()
@@ -198,6 +260,10 @@ void halfFrame()
     // Clock the triangle length counter if it's not halted
     if (!(triangleFlags & 0x80) && triangleLength != 0)
         triangleLength--;
+
+    // Clock the noise length counter if it's not halted
+    if (!(noiseFlags & 0x20) && noiseLength != 0)
+        noiseLength--;
 }
 
 void runCycle()
@@ -238,6 +304,10 @@ void runCycle()
     // Check if the triangle channel should be silenced
     if (!(status & 0x04))
         triangleLength = 0;
+
+    // Check if the noise channel should be silenced
+    if (!(status & 0x08))
+        noiseLength = 0;
 }
 
 uint8_t registerRead(uint16_t address)
@@ -252,6 +322,7 @@ uint8_t registerRead(uint16_t address)
             for (int i = 0; i < 2; i++)
                 value |= (pulseLengths[i] > 0) << i;
             value |= (triangleLength > 0) << 2;
+            value |= (noiseLength > 0) << 3;
             status &= ~0x40;
             break;
     }
@@ -269,7 +340,7 @@ void registerWrite(uint16_t address, uint8_t value)
             dutyCycles[i] = (value & 0xC0) >> 6;
             pulseFlags[i] = (pulseFlags[i] & ~0x20) | (value & 0x20); // Length counter halt
             pulseFlags[i] = (pulseFlags[i] & ~0x10) | (value & 0x10); // Constant volume
-            envelopePeriods[i] = value & 0x0F;
+            pulseEnvPeriods[i] = value & 0x0F;
             break;
 
         case 0x4001: case 0x4005: // Pulse channels
@@ -305,6 +376,22 @@ void registerWrite(uint16_t address, uint8_t value)
             triangleLength = noteLengths[(value & 0xF8) >> 3];
             triangleFreq = triangleBaseFreq = ((value & 0x07) << 8) | (triangleBaseFreq & 0x0FF);
             triangleFlags |= 0x01; // Linear counter reload
+            break;
+
+        case 0x400C: // Noise channel
+            noiseFlags = (noiseFlags & ~0x20) | (value & 0x20); // Length counter halt
+            noiseFlags = (noiseFlags & ~0x10) | (value & 0x10); // Constant volume
+            noiseEnvPeriod = value & 0x0F;
+            break;
+
+        case 0x400E: // Noise channel
+            noiseFlags = (noiseFlags & ~0x80) | (value & 0x80); // Feedback mode
+            noisePeriod = noisePeriods[value & 0x0F];
+            break;
+
+        case 0x400F: // Noise channel
+            noiseLength = noteLengths[(value & 0xF8) >> 3];
+            noiseFlags |= 0x01; // Envelope reload
             break;
 
         case 0x4015: // Status
