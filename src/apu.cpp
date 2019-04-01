@@ -26,10 +26,10 @@
 namespace apu
 {
 
-float wavelengths[2];
-uint16_t frequencies[2];
-uint16_t baseFrequencies[2];
-uint8_t lengthCounters[2];
+float pulseWaves[2];
+uint16_t pulseFreqs[2];
+uint16_t pulseBaseFreqs[2];
+uint8_t pulseLengths[2];
 uint8_t envelopePeriods[2];
 uint8_t envelopeDividers[2];
 uint8_t envelopeDecays[2];
@@ -38,6 +38,14 @@ uint8_t sweepDividers[2];
 uint8_t sweepShifts[2];
 uint8_t dutyCycles[2];
 uint8_t pulseFlags[2];
+
+float triangleWave;
+uint16_t triangleFreq;
+uint16_t triangleBaseFreq;
+uint8_t triangleLength;
+uint8_t linearCounter;
+uint8_t linearReload;
+uint8_t triangleFlags;
 
 uint16_t frameCounter;
 uint8_t frameCounterFlags;
@@ -49,12 +57,18 @@ const uint8_t noteLengths[] =
     12,  16, 24, 18, 48, 20, 96, 22, 192, 24, 72, 26, 16, 28, 32, 30
 };
 
+const uint8_t triangleSteps[] =
+{
+    15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0,
+     0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15
+};
+
 const vector<core::StateItem> stateItems =
 {
-    { wavelengths,        sizeof(wavelengths)       },
-    { frequencies,        sizeof(frequencies)       },
-    { baseFrequencies,    sizeof(baseFrequencies)   },
-    { lengthCounters,     sizeof(lengthCounters)    },
+    { pulseWaves,         sizeof(pulseWaves)        },
+    { pulseFreqs,         sizeof(pulseFreqs)        },
+    { pulseBaseFreqs,     sizeof(pulseBaseFreqs)    },
+    { pulseLengths,       sizeof(pulseLengths)      },
     { envelopePeriods,    sizeof(envelopePeriods)   },
     { envelopeDividers,   sizeof(envelopeDividers)  },
     { envelopeDecays,     sizeof(envelopeDecays)    },
@@ -63,6 +77,13 @@ const vector<core::StateItem> stateItems =
     { sweepShifts,        sizeof(sweepShifts)       },
     { dutyCycles,         sizeof(dutyCycles)        },
     { pulseFlags,         sizeof(pulseFlags)        },
+    { &triangleWave,      sizeof(triangleWave)      },
+    { &triangleFreq,      sizeof(triangleFreq)      },
+    { &triangleBaseFreq,  sizeof(triangleBaseFreq)  },
+    { &triangleLength,    sizeof(triangleLength)    },
+    { &linearCounter,     sizeof(linearCounter)     },
+    { &linearReload,      sizeof(linearReload)      },
+    { &triangleFlags,     sizeof(triangleFlags)     },
     { &frameCounter,      sizeof(frameCounter)      },
     { &frameCounterFlags, sizeof(frameCounterFlags) },
     { &status,            sizeof(status)            }
@@ -75,17 +96,24 @@ int16_t audioSample(float pitch)
     // Generate the pulse waves
     for (int i = 0; i < 2; i++)
     {
-        wavelengths[i] += pitch;
+        pulseWaves[i] += pitch;
+        if (pulseWaves[i] >= pulseFreqs[i])
+            pulseWaves[i] = 0;
 
-        if ((dutyCycles[i] == 0 && wavelengths[i] <  frequencies[i] / 8) ||
-            (dutyCycles[i] == 1 && wavelengths[i] <  frequencies[i] / 4) ||
-            (dutyCycles[i] == 2 && wavelengths[i] <  frequencies[i] / 2) ||
-            (dutyCycles[i] == 3 && wavelengths[i] >= frequencies[i] / 4))
+        if ((dutyCycles[i] == 0 && pulseWaves[i] <  pulseFreqs[i] / 8) ||
+            (dutyCycles[i] == 1 && pulseWaves[i] <  pulseFreqs[i] / 4) ||
+            (dutyCycles[i] == 2 && pulseWaves[i] <  pulseFreqs[i] / 2) ||
+            (dutyCycles[i] == 3 && pulseWaves[i] >= pulseFreqs[i] / 4))
             out += 0x200 * ((pulseFlags[i] & 0x10) ? envelopePeriods[i] : envelopeDecays[i]);
-
-        if (wavelengths[i] >= frequencies[i])
-            wavelengths[i] = 0;
     }
+
+    // Generate the triangle wave
+    if (triangleLength != 0 && linearCounter != 0)
+        triangleWave += pitch / 2;
+    if (triangleWave >= triangleFreq + 1)
+        triangleWave = 0;
+    uint8_t step = (triangleWave / (triangleFreq + 1)) * 32;
+    out += 0x243 * triangleSteps[step];
 
     return out;
 }
@@ -99,9 +127,9 @@ void reset()
 
 void quarterFrame()
 {
+    // Clock the pulse envelopes
     for (int i = 0; i < 2; i++)
     {
-        // Clock the pulse envelopes
         if (pulseFlags[i] & 0x01)
         {
             // Reload the divider and decay values
@@ -127,29 +155,35 @@ void quarterFrame()
             }
         }
     }
+
+    // Clock the triangle linear counter
+    if (triangleFlags & 0x01) // Linear counter reload
+        linearCounter = linearReload;
+    else if (linearCounter != 0)
+        linearCounter--;
+    if (!(triangleFlags & 0x80)) // Control flag
+        triangleFlags &= ~0x01;
 }
 
 void halfFrame()
 {
+    // Clock the pulse length counters and sweeps
     for (int i = 0; i < 2; i++)
     {
         // Clock the length counters if they're not halted
-        if (!(pulseFlags[i] & 0x20))
-        {
-            if (lengthCounters[i] != 0)
-                lengthCounters[i]--;
-        }
+        if (!(pulseFlags[i] & 0x20) && pulseLengths[i] != 0)
+            pulseLengths[i]--;
 
-        // Clock the pulse sweep dividers
+        // Clock the sweep dividers
         if (sweepDividers[i] == 0 || (pulseFlags[i] & 0x02))
         {
             // Sweep the frequencies if sweeps are enabled
             if (sweepDividers[i] == 0 && (pulseFlags[i] & 0x80))
             {
-                int16_t sweep = baseFrequencies[i] >> sweepShifts[i];
+                int16_t sweep = pulseBaseFreqs[i] >> sweepShifts[i];
                 if (pulseFlags[i] & 0x08) // Negation
                     sweep -= 2 * sweep + !i;
-                frequencies[i] += sweep;
+                pulseFreqs[i] += sweep;
             }
 
             sweepDividers[i] = sweepPeriods[i];
@@ -160,6 +194,10 @@ void halfFrame()
             sweepDividers[i]--;
         }
     }
+
+    // Clock the triangle length counter if it's not halted
+    if (!(triangleFlags & 0x80) && triangleLength != 0)
+        triangleLength--;
 }
 
 void runCycle()
@@ -188,14 +226,18 @@ void runCycle()
             frameCounter = 0;
     }
 
-    // Check if a channel should be silenced
+    // Check if either of the pulse channels should be silenced
     for (int i = 0; i < 2; i++)
     {
-        if (frequencies[i] < 8 || frequencies[i] > 0x7FF || lengthCounters[i] == 0)
-            frequencies[i] = 0;
         if (!(status & (1 << i)))
-            frequencies[i] = lengthCounters[i] = 0;
+            pulseLengths[i] = 0;
+        if (pulseFreqs[i] < 8 || pulseFreqs[i] > 0x7FF || pulseLengths[i] == 0)
+            pulseFreqs[i] = 0;
     }
+
+    // Check if the triangle channel should be silenced
+    if (!(status & 0x04))
+        triangleLength = 0;
 }
 
 uint8_t registerRead(uint16_t address)
@@ -208,7 +250,8 @@ uint8_t registerRead(uint16_t address)
             // Set bits if the corresponding length counters are greater than 0
             value = status & 0xC0;
             for (int i = 0; i < 2; i++)
-                value |= (lengthCounters[i] > 0) << i;
+                value |= (pulseLengths[i] > 0) << i;
+            value |= (triangleLength > 0) << 2;
             status &= ~0x40;
             break;
     }
@@ -238,14 +281,30 @@ void registerWrite(uint16_t address, uint8_t value)
             break;
 
         case 0x4002: case 0x4006: // Pulse channels
-            frequencies[i] = baseFrequencies[i] = (baseFrequencies[i] & 0x700) | value;
+            pulseFreqs[i] = pulseBaseFreqs[i] = (pulseBaseFreqs[i] & 0x700) | value;
             break;
 
         case 0x4003: case 0x4007: // Pulse channels
-            lengthCounters[i] = noteLengths[(value & 0xF8) >> 3];
-            frequencies[i] = baseFrequencies[i] = ((value & 0x07) << 8) | (baseFrequencies[i] & 0x0FF);
-            wavelengths[i] = 0;
+            pulseLengths[i] = noteLengths[(value & 0xF8) >> 3];
+            pulseFreqs[i] = pulseBaseFreqs[i] = ((value & 0x07) << 8) | (pulseBaseFreqs[i] & 0x0FF);
+            pulseWaves[i] = 0;
             pulseFlags[i] |= 0x01; // Envelope reload
+            break;
+
+        case 0x4008: // Triangle channel
+            triangleFlags = (triangleFlags & ~0x80) | (value & 0x80); // Length counter halt
+            linearReload = value & 0x7F;
+            triangleFlags |= 0x01; // Linear counter reload
+            break;
+
+        case 0x400A: // Triangle channel
+            triangleFreq = triangleBaseFreq = (triangleBaseFreq & 0x700) | value;
+            break;
+
+        case 0x400B: // Triangle channel
+            triangleLength = noteLengths[(value & 0xF8) >> 3];
+            triangleFreq = triangleBaseFreq = ((value & 0x07) << 8) | (triangleBaseFreq & 0x0FF);
+            triangleFlags |= 0x01; // Linear counter reload
             break;
 
         case 0x4015: // Status
