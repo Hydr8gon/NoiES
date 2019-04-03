@@ -41,7 +41,7 @@ ROMFS		:=	romfs
 APP_TITLE   := NoiES
 APP_AUTHOR  := Hydr8gon
 APP_VERSION := 1.0
-#ICON        := icon.jpg
+ICON        := icon.jpg
 
 #---------------------------------------------------------------------------------
 # options for code generation
