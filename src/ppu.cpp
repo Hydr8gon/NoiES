@@ -143,6 +143,8 @@ uint16_t memoryMirror(uint16_t address)
 
 void runCycle()
 {
+    uint16_t tile;
+
     if (scanline < 240) // Visible lines
     {
         if (scanlineCycles >= 1 && scanlineCycles <= 256 && (mask & 0x08)) // Background drawing
@@ -161,8 +163,7 @@ void runCycle()
             tableOffset = memoryMirror(tableOffset);
 
             // Get the lower 2 bits of the palette index
-            uint16_t patternOffset = (control & 0x10) << 8;
-            uint16_t tile = patternOffset + memory[tableOffset + (yOffset / 8) * 32 + xOffset / 8] * 16;
+            tile = ((control & 0x10) << 8) + memory[tableOffset + (yOffset / 8) * 32 + xOffset / 8] * 16;
             uint8_t lowerBits = memory[tile + yOffset % 8] & (0x80 >> (xOffset % 8)) ? 0x01 : 0x00;
             lowerBits |= memory[tile + yOffset % 8 + 8] & (0x80 >> (xOffset % 8)) ? 0x02 : 0x00;
 
@@ -219,8 +220,8 @@ void runCycle()
                     uint8_t x = *(sprite + 3);
                     uint8_t spriteY = ((y - *sprite) / 8) * 16 + (y - *sprite) % 8;
                     uint16_t patternOffset = (height == 8) ? (control & 0x08) << 9 : (*(sprite + 1) & 0x01) << 12;
-                    uint16_t tile = patternOffset + (*(sprite + 1) & (height == 8 ? ~0x00 : ~0x01)) * 16;
                     uint8_t upperBits = (*(sprite + 2) & 0x03) << 2;
+                    tile = patternOffset + (*(sprite + 1) & (height == 8 ? ~0x00 : ~0x01)) * 16;
 
                     if (*(sprite + 2) & 0x80) // Vertical flip
                     {
@@ -291,9 +292,20 @@ void runCycle()
         }
     }
 
-    // MMC3 IRQ counter
-    if ((scanline < 240 || scanline == 261) && scanlineCycles == 260 && (mask & 0x18))
-        mapper::irqCounter();
+    if (mapper::type == 3)
+    {
+        // MMC3 IRQ counter
+        if ((scanline < 240 || scanline == 261) && scanlineCycles == 260 && (mask & 0x18))
+            mapper::mmc3Counter();
+    }
+    else if (mapper::type == 9)
+    {
+        // Set the MMC2 latches
+        if ((tile & 0x0FFF) == 0x0FD0)
+            mapper::mmc2SetLatch(((tile & 0x1000) ? 1 : 0), false);
+        else if ((tile & 0x0FFF) == 0x0FE0)
+            mapper::mmc2SetLatch(((tile & 0x1000) ? 1 : 0), true);
+    }
 
     // Update the scanline counters
     scanlineCycles++;

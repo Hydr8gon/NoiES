@@ -25,10 +25,13 @@
 namespace mapper
 {
 
+extern uint8_t type;
+
 bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType);
 void registerWrite(uint16_t address, uint8_t value);
 
-void irqCounter();
+void mmc3Counter();
+void mmc2SetLatch(uint8_t latch, bool value);
 
 void saveState(FILE *state);
 void loadState(FILE *state);

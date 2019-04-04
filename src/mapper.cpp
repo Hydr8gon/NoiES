@@ -33,23 +33,25 @@ uint32_t vromAddress;
 
 uint8_t type;
 uint8_t bankSelect, latch, shift;
+uint8_t mmc2VromBanks[4];
 uint8_t irqCount, irqLatch;
 bool irqEnable, irqReload;
 
 const vector<core::StateItem> stateItems =
 {
-    { &bankSelect,   sizeof(bankSelect) },
-    { &latch,        sizeof(latch)      },
-    { &shift,        sizeof(shift)      },
-    { &irqCount,     sizeof(irqCount)   },
-    { &irqLatch,     sizeof(irqLatch)   },
-    { &irqEnable,    sizeof(irqEnable)  },
-    { &irqReload,    sizeof(irqReload)  }
+    { &bankSelect,   sizeof(bankSelect)    },
+    { &latch,        sizeof(latch)         },
+    { &shift,        sizeof(shift)         },
+    { mmc2VromBanks, sizeof(mmc2VromBanks) },
+    { &irqCount,     sizeof(irqCount)      },
+    { &irqLatch,     sizeof(irqLatch)      },
+    { &irqEnable,    sizeof(irqEnable)     },
+    { &irqReload,    sizeof(irqReload)     }
 };
 
 bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType)
 {
-    if (mapperType > 4) // Unknown mapper type
+    if (mapperType > 4 && mapperType != 9) // Unknown mapper type
         return false;
 
     vromAddress = numBanks * 0x4000;
@@ -70,8 +72,9 @@ bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType)
     fclose(romFile);
 
     // Load the initial banks into system memory
-    memcpy(&cpu::memory[0x8000], rom, 0x4000);
-    memcpy(&cpu::memory[0xC000], &rom[vromAddress - 0x4000], 0x4000);
+    uint16_t lastSize = (type == 9) ? 0x6000 : 0x4000;
+    memcpy(&cpu::memory[0x8000], rom, 0x8000 - lastSize);
+    memcpy(&cpu::memory[0xA000], &rom[vromAddress - lastSize], lastSize);
     memcpy(ppu::memory, &rom[vromAddress], 0x2000);
 
     return true;
@@ -200,6 +203,23 @@ void mmc3(uint16_t address, uint8_t value)
     }
 }
 
+void mmc2(uint16_t address, uint8_t value)
+{
+    if (address >= 0xA000 && address < 0xB000) // Swap first 8 KB ROM bank
+    {
+        memcpy(&cpu::memory[0x8000], &rom[0x2000 * value], 0x2000);
+    }
+    else if (address < 0xF000) // Select VROM banks
+    {
+        mmc2VromBanks[(address - 0xB000) / 0x1000] = value;
+    }
+    else // Mirroring
+    {
+        if (ppu::mirrorMode != 4)
+            ppu::mirrorMode = 2 + value;
+    }
+}
+
 void registerWrite(uint16_t address, uint8_t value)
 {
     switch (type)
@@ -208,14 +228,12 @@ void registerWrite(uint16_t address, uint8_t value)
         case 2: unrom(address, value); break;
         case 3: cnrom(address, value); break;
         case 4:  mmc3(address, value); break;
+        case 9:  mmc2(address, value); break;
     }
 }
 
-void irqCounter()
+void mmc3Counter()
 {
-    if (type != 4)
-        return;
-
     // Clock the MMC3 IRQ counter
     if (irqCount == 0 || irqReload)
     {
@@ -230,6 +248,14 @@ void irqCounter()
     {
         irqCount--;
     }
+}
+
+void mmc2SetLatch(uint8_t latch, bool value)
+{
+    if (latch == 0)
+        memcpy(ppu::memory, &rom[vromAddress + 0x1000 * mmc2VromBanks[value]], 0x1000);
+    else
+        memcpy(&ppu::memory[0x1000], &rom[vromAddress + 0x1000 * mmc2VromBanks[2 + value]], 0x1000);
 }
 
 void saveState(FILE *state)
