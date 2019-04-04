@@ -74,7 +74,7 @@ bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType)
     // Load the initial banks into system memory
     uint16_t lastSize = (type == 9) ? 0x6000 : 0x4000;
     memcpy(&cpu::memory[0x8000], rom, 0x8000 - lastSize);
-    memcpy(&cpu::memory[0xA000], &rom[vromAddress - lastSize], lastSize);
+    memcpy(&cpu::memory[0x10000 - lastSize], &rom[vromAddress - lastSize], lastSize);
     memcpy(ppu::memory, &rom[vromAddress], 0x2000);
 
     return true;
