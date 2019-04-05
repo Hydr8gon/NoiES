@@ -40,8 +40,9 @@ void *displayMutex;
 
 uint8_t memory[0x4000];
 uint8_t sprMemory[0x100];
+uint8_t pixelBuffer[0x10];
 
-uint16_t scanline, scanlineCycles;
+uint16_t scanline, scanlineDot;
 uint16_t ppuAddress, ppuTempAddr;
 uint8_t scrollX;
 uint8_t control, mask, status;
@@ -54,20 +55,20 @@ uint8_t mirrorMode;
 
 const vector<core::StateItem> stateItems =
 {
-    { memory,          sizeof(memory)         },
-    { sprMemory,       sizeof(sprMemory)      },
-    { &scanline,       sizeof(scanline)       },
-    { &scanlineCycles, sizeof(scanlineCycles) },
-    { &ppuAddress,     sizeof(ppuAddress)     },
-    { &ppuTempAddr,    sizeof(ppuTempAddr)    },
-    { &scrollX,        sizeof(scrollX)        },
-    { &control,        sizeof(control)        },
-    { &mask,           sizeof(mask)           },
-    { &status,         sizeof(status)         },
-    { &oamAddress,     sizeof(oamAddress)     },
-    { &readBuffer,     sizeof(readBuffer)     },
-    { &spriteCount,    sizeof(spriteCount)    },
-    { &writeToggle,    sizeof(writeToggle)    }
+    { memory,       sizeof(memory)      },
+    { sprMemory,    sizeof(sprMemory)   },
+    { &scanline,    sizeof(scanline)    },
+    { &scanlineDot, sizeof(scanlineDot) },
+    { &ppuAddress,  sizeof(ppuAddress)  },
+    { &ppuTempAddr, sizeof(ppuTempAddr) },
+    { &scrollX,     sizeof(scrollX)     },
+    { &control,     sizeof(control)     },
+    { &mask,        sizeof(mask)        },
+    { &status,      sizeof(status)      },
+    { &oamAddress,  sizeof(oamAddress)  },
+    { &readBuffer,  sizeof(readBuffer)  },
+    { &spriteCount, sizeof(spriteCount) },
+    { &writeToggle, sizeof(writeToggle) }
 };
 
 const uint32_t palette[] =
@@ -141,46 +142,65 @@ uint16_t memoryMirror(uint16_t address)
     return address;
 }
 
+void fetchPixels()
+{
+    uint16_t xOffset = ((ppuAddress & 0x001F) << 3);
+    uint16_t yOffset = ((ppuAddress & 0x03E0) >> 2) + (ppuAddress >> 12);
+    uint16_t tableOffset = memoryMirror(0x2000 | (ppuAddress & 0x0C00));
+    uint16_t tile = ((control & 0x10) << 8) + memory[tableOffset + (yOffset / 8) * 32 + xOffset / 8] * 16;
+
+    // Get the upper 2 bits of the palette index from the attribute table
+    uint8_t upperBits = memory[tableOffset + 0x03C0 + (yOffset / 32) * 8 + xOffset / 32];
+    if ((xOffset / 16) % 2 == 0 && (yOffset / 16) % 2 == 0) // Top left
+        upperBits = (upperBits & 0x03) << 2;
+    else if ((xOffset / 16) % 2 == 1 && (yOffset / 16) % 2 == 0) // Top right
+        upperBits = (upperBits & 0x0C) << 0;
+    else if ((xOffset / 16) % 2 == 0 && (yOffset / 16) % 2 == 1) // Bottom left
+        upperBits = (upperBits & 0x30) >> 2;
+    else // Bottom right
+        upperBits = (upperBits & 0xC0) >> 4;
+
+    for (int i = 0; i < 8; i++)
+    {
+        // Get the lower 2 bits of the palette index from the pattern table
+        uint8_t lowerBits = memory[tile + yOffset % 8] & (0x80 >> ((xOffset + i) % 8)) ? 0x01 : 0x00;
+        lowerBits |= memory[tile + yOffset % 8 + 8] & (0x80 >> ((xOffset + i) % 8)) ? 0x02 : 0x00;
+
+        // Shift the pixel buffer and store the new data
+        pixelBuffer[i] = pixelBuffer[i + 8];
+        pixelBuffer[i + 8] = upperBits | lowerBits;
+    }
+
+    // Set the MMC2 latches
+    if (tile == 0x1FD0)
+        mapper::mmc2SetLatch(1, false);
+    else if (tile == 0x1FE0)
+        mapper::mmc2SetLatch(1, true);
+
+    // Increment the coarse X coordinate 
+    if ((ppuAddress & 0x001F) == 0x1F)
+        ppuAddress = (ppuAddress & ~0x001F) ^ 0x0400;
+    else
+        ppuAddress++;
+}
+
 void runCycle()
 {
-    uint16_t tile;
-
-    if (scanline < 240) // Visible lines
+    if (scanline < 240 && (mask & 0x18)) // Visible lines
     {
-        if (scanlineCycles >= 1 && scanlineCycles <= 256 && (mask & 0x08)) // Background drawing
+        if (scanlineDot >= 1 && scanlineDot <= 256 && (mask & 0x08)) // Background drawing
         {
-            uint8_t x = scanlineCycles - 1;
-            uint8_t y = scanline;
-            uint16_t xOffset = x + ((ppuAddress & 0x001F) << 3) + scrollX;
-            uint16_t yOffset = ((ppuAddress & 0x03E0) >> 2) + (ppuAddress >> 12);
-            uint16_t tableOffset = 0x2000 | (ppuAddress & 0x0C00);
+            uint8_t x = scanlineDot - 1;
 
-            if (xOffset >= 256)
+            // Update the pixel buffer
+            if (x != 0 && x % 8 == 0)
+                fetchPixels();
+            uint8_t color = pixelBuffer[x % 8 + scrollX];
+
+            if ((x >= 8 || (mask & 0x02)) && (color & 0x03) != 0)
             {
-                tableOffset ^= 0x0400;
-                xOffset %= 256;
-            }
-            tableOffset = memoryMirror(tableOffset);
-
-            // Get the lower 2 bits of the palette index
-            tile = ((control & 0x10) << 8) + memory[tableOffset + (yOffset / 8) * 32 + xOffset / 8] * 16;
-            uint8_t lowerBits = memory[tile + yOffset % 8] & (0x80 >> (xOffset % 8)) ? 0x01 : 0x00;
-            lowerBits |= memory[tile + yOffset % 8 + 8] & (0x80 >> (xOffset % 8)) ? 0x02 : 0x00;
-
-            if ((x >= 8 || (mask & 0x02)) && lowerBits != 0)
-            {
-                // Get the upper 2 bits of the palette index from the attribute table
-                uint8_t upperBits = memory[tableOffset + 0x03C0 + (yOffset / 32) * 8 + xOffset / 32];
-                if ((xOffset / 16) % 2 == 0 && (yOffset / 16) % 2 == 0) // Top left
-                    upperBits = (upperBits & 0x03) << 2;
-                else if ((xOffset / 16) % 2 == 1 && (yOffset / 16) % 2 == 0) // Top right
-                    upperBits = (upperBits & 0x0C) << 0;
-                else if ((xOffset / 16) % 2 == 0 && (yOffset / 16) % 2 == 1) // Bottom left
-                    upperBits = (upperBits & 0x30) >> 2;
-                else // Bottom right
-                    upperBits = (upperBits & 0xC0) >> 4;
-
-                uint8_t type = framebuffer[y * 256 + x];
+                uint32_t *pixel = &framebuffer[scanline * 256 + x];
+                uint8_t type = *pixel;
 
                 // Check for a sprite 0 hit
                 if (type < 0xFD)
@@ -188,28 +208,12 @@ void runCycle()
 
                 // Draw a pixel
                 if (type % 2 == 1)
-                    framebuffer[y * 256 + x] = palette[memory[0x3F00 | upperBits | lowerBits]];
-            }
-
-            // Increment the Y coordinate at the end of the scanline
-            if (scanlineCycles == 256)
-            {
-                if ((ppuAddress & 0x7000) == 0x7000)
-                {
-                    if ((ppuAddress & 0x03E0) == 0x03A0)
-                        ppuAddress = (ppuAddress & ~0x73E0) ^ 0x0800;
-                    else
-                        ppuAddress = (ppuAddress & ~0x73E0) | ((ppuAddress + 0x0020) & 0x03E0);
-                }
-                else
-                {
-                    ppuAddress += 0x1000;
-                }
+                    *pixel = palette[memory[0x3F00 | color]];
             }
         }
-        else if (scanlineCycles >= 257 && scanlineCycles <= 320 && (mask & 0x10)) // Sprite drawing
+        else if (scanlineDot >= 257 && scanlineDot <= 320 && (mask & 0x10)) // Sprite drawing
         {
-            uint8_t *sprite = &sprMemory[(scanlineCycles - 257) * 4];
+            uint8_t *sprite = &sprMemory[(scanlineDot - 257) * 4];
             uint8_t height = (control & 0x20) ? 16 : 8;
             uint8_t y = scanline;
 
@@ -217,129 +221,147 @@ void runCycle()
             {
                 if (spriteCount < 8)
                 {
-                    uint8_t x = *(sprite + 3);
+                    uint8_t spriteX = *(sprite + 3);
                     uint8_t spriteY = ((y - *sprite) / 8) * 16 + (y - *sprite) % 8;
-                    uint16_t patternOffset = (height == 8) ? (control & 0x08) << 9 : (*(sprite + 1) & 0x01) << 12;
                     uint8_t upperBits = (*(sprite + 2) & 0x03) << 2;
-                    tile = patternOffset + (*(sprite + 1) & (height == 8 ? ~0x00 : ~0x01)) * 16;
 
-                    if (*(sprite + 2) & 0x80) // Vertical flip
+                    uint16_t tile;
+                    if (height == 8)
+                        tile = ((control & 0x08) << 9) + *(sprite + 1) * 16;
+                    else
+                        tile = ((*(sprite + 1) & 0x01) << 12) + (*(sprite + 1) & ~0x01) * 16;
+
+                    // Flip the sprite vertically if needed
+                    if (*(sprite + 2) & 0x80)
                     {
                         if (height == 16 && spriteY < 8)
                             tile += 16;
                         spriteY = 7 - (spriteY % 8);
                     }
 
-                    y++;
-
                     // Draw a sprite line on the next scanline
+                    y++;
                     for (int i = 0; i < 8; i++)
                     {
-                        uint16_t xOffset = x + ((*(sprite + 2) & 0x40) ? 7 - i : i);
+                        uint16_t xOffset = spriteX + ((*(sprite + 2) & 0x40) ? 7 - i : i);
                         uint8_t lowerBits = memory[tile + spriteY] & (0x80 >> i) ? 0x01 : 0x00;
                         lowerBits |= memory[tile + spriteY + 8] & (0x80 >> i) ? 0x02 : 0x00;
 
-                        if (xOffset < 256 && (xOffset >= 8 || (mask & 0x04)) && lowerBits != 0)
+                        if ((xOffset >= 8 || (mask & 0x04)) && xOffset < 256 && lowerBits != 0)
                         {
-                            uint8_t type = framebuffer[y * 256 + xOffset];
+                            uint32_t *pixel = &framebuffer[y * 256 + xOffset];
+                            uint8_t type = *pixel;
+
                             if (type == 0xFF)
                             {
-                                framebuffer[y * 256 + xOffset] = palette[memory[0x3F10 | upperBits | lowerBits]];
+                                // Draw a pixel
+                                *pixel = palette[memory[0x3F10 | upperBits | lowerBits]];
 
                                 // Mark opaque pixels
-                                framebuffer[y * 256 + xOffset]--;
-                                if (*(sprite + 2) & 0x20) // Sprite is behind the background
-                                    framebuffer[y * 256 + xOffset]--;
+                                (*pixel)--;
+                                if (*(sprite + 2) & 0x20) // Behind background
+                                    (*pixel)--;
                             }
-                            if (scanlineCycles == 257) // Sprite 0
-                                framebuffer[y * 256 + xOffset] -= 2;
+
+                            // Mark sprite 0
+                            if (scanlineDot == 257)
+                                *pixel -= 2;
                         }
                     }
+
+                    // Set the MMC2 latches
+                    if (tile == 0x0FD0)
+                        mapper::mmc2SetLatch(0, false);
+                    else if (tile == 0x0FE0)
+                        mapper::mmc2SetLatch(0, true);
 
                     if (!config::disableSpriteLimit)
                         spriteCount++;
                 }
-                else // Sprite overflow
+                else
                 {
+                    // Set the sprite overflow flag
                     status |= 0x20;
                 }
             }
+        }
 
-            // Set the horizontal scroll data
-            if (scanlineCycles == 257 && (mask & 0x18))
-                ppuAddress = (ppuAddress & ~0x041F) | (ppuTempAddr & 0x041F);
+        if (scanlineDot == 256)
+        {
+            // Increment the Y coordinate
+            if ((ppuAddress & 0x7000) == 0x7000)
+            {
+                if ((ppuAddress & 0x03E0) == 0x03A0)
+                    ppuAddress = (ppuAddress & ~0x73E0) ^ 0x0800;
+                else
+                    ppuAddress = (ppuAddress & ~0x73E0) | ((ppuAddress + 0x0020) & 0x03E0);
+            }
+            else
+            {
+                ppuAddress += 0x1000;
+            }
         }
     }
-    else if (scanline == 241 && scanlineCycles == 1) // Start of the V-blank period
+    else if (scanline == 241 && scanlineDot == 1) // Start of V-blank
     {
-        status |= 0x80; // V-blank flag
-        if (control & 0x80) // NMI enable
+        // Trigger an NMI if enabled
+        status |= 0x80;
+        if (control & 0x80)
             cpu::interrupts[0] = true;
     }
     else if (scanline == 261) // Pre-render line
     {
         // Clear the bits for the next frame
-        if (scanlineCycles == 1)
+        if (scanlineDot == 1)
             status &= ~0xE0;
 
-        // Set the scroll data
-        if (mask & 0x18)
-        {
-            if (scanlineCycles == 257)
-                ppuAddress = (ppuAddress & ~0x041F) | (ppuTempAddr & 0x041F);
-            else if (scanlineCycles >= 280 && scanlineCycles <= 304)
-                ppuAddress = (ppuAddress & ~0x7BE0) | (ppuTempAddr & 0x7BE0);
-        }
+        // Reload the vertical scroll data if rendering is enabled
+        if (scanlineDot >= 280 && scanlineDot <= 304 && (mask & 0x18))
+            ppuAddress = (ppuAddress & ~0x7BE0) | (ppuTempAddr & 0x7BE0);
     }
 
-    if (mapper::type == 3)
+    if ((scanline < 240 || scanline == 261) && (mask & 0x18))
     {
-        // MMC3 IRQ counter
-        if ((scanline < 240 || scanline == 261) && scanlineCycles == 260 && (mask & 0x18))
+        // Perform updates that happen on both visible lines and the pre-render line
+        if (scanlineDot == 257) // Horizontal scroll data
+            ppuAddress = (ppuAddress & ~0x041F) | (ppuTempAddr & 0x041F);
+        else if (scanlineDot == 260) // MMC3 IRQ counter
             mapper::mmc3Counter();
-    }
-    else if (mapper::type == 9)
-    {
-        // Set the MMC2 latches
-        if ((tile & 0x0FFF) == 0x0FD0)
-            mapper::mmc2SetLatch(((tile & 0x1000) ? 1 : 0), false);
-        else if ((tile & 0x0FFF) == 0x0FE0)
-            mapper::mmc2SetLatch(((tile & 0x1000) ? 1 : 0), true);
+        else if (scanlineDot == 328 || scanlineDot == 336) // Pixel buffer
+            fetchPixels();
     }
 
-    // Update the scanline counters
-    scanlineCycles++;
-    if (scanlineCycles == 341)
+    // Update the scanline position
+    scanlineDot++;
+    if (scanlineDot == 341) // End of scanline
     {
-        spriteCount = 0;
-        scanlineCycles = 0;
+        scanlineDot = spriteCount = 0;
         scanline++;
-    }
 
-    if (scanline == 262) // End of frame
-    {
-        scanline = 0;
-
-        // Copy the finished frame to the display
-        mutex::lock(displayMutex);
-        memcpy(displayBuffer, framebuffer, sizeof(displayBuffer));
-        mutex::unlock(displayMutex);
-
-        // Clear the framebuffer
-        for (int i = 0; i < 256 * 240; i++)
-            framebuffer[i] = palette[memory[0x3F00]];
-
-        // Limit the FPS to 60 if enabled
-        if (config::frameLimiter)
+        if (scanline == 262) // End of frame
         {
-            chrono::duration<double> elapsed = chrono::steady_clock::now() - timer;
-            if (elapsed.count() < 1.0f / 60)
-                usleep((1.0f / 60 - elapsed.count()) * 1000000);
-            timer = chrono::steady_clock::now();
+            // Copy the finished frame to the display
+            mutex::lock(displayMutex);
+            memcpy(displayBuffer, framebuffer, sizeof(displayBuffer));
+            mutex::unlock(displayMutex);
+
+            // Clear the framebuffer
+            for (int i = 0; i < 256 * 240; i++)
+                framebuffer[i] = palette[memory[0x3F00]];
+
+            // Limit the FPS to 60 if enabled
+            if (config::frameLimiter)
+            {
+                chrono::duration<double> elapsed = chrono::steady_clock::now() - timer;
+                if (elapsed.count() < 1.0f / 60)
+                    usleep((1.0f / 60 - elapsed.count()) * 1000000);
+                timer = chrono::steady_clock::now();
+            }
+
+            scanline = 0;
         }
     }
 }
-
 
 uint8_t registerRead(uint16_t address)
 {

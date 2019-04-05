@@ -25,8 +25,6 @@
 namespace mapper
 {
 
-extern uint8_t type;
-
 bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType);
 void registerWrite(uint16_t address, uint8_t value);
 

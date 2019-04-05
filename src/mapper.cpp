@@ -234,6 +234,9 @@ void registerWrite(uint16_t address, uint8_t value)
 
 void mmc3Counter()
 {
+    if (type != 4)
+        return;
+
     // Clock the MMC3 IRQ counter
     if (irqCount == 0 || irqReload)
     {
@@ -252,6 +255,9 @@ void mmc3Counter()
 
 void mmc2SetLatch(uint8_t latch, bool value)
 {
+    if (type != 9)
+        return;
+
     if (latch == 0)
         memcpy(ppu::memory, &rom[vromAddress + 0x1000 * mmc2VromBanks[value]], 0x1000);
     else
