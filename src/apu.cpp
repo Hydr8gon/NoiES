@@ -133,7 +133,10 @@ int16_t audioSample(float pitch)
     if (triangleLength != 0 && linearCounter != 0)
         triangleWave += pitch / 2;
     if (triangleWave >= triangleFreq + 1)
+    {
         triangleWave = 0;
+        triangleFreq = triangleBaseFreq;
+    }
     uint8_t step = (triangleWave / (triangleFreq + 1)) * 32;
     out += 0x243 * triangleSteps[step];
 
@@ -369,12 +372,12 @@ void registerWrite(uint16_t address, uint8_t value)
             break;
 
         case 0x400A: // Triangle channel
-            triangleFreq = triangleBaseFreq = (triangleBaseFreq & 0x700) | value;
+            triangleBaseFreq = (triangleBaseFreq & 0x700) | value;
             break;
 
         case 0x400B: // Triangle channel
             triangleLength = noteLengths[(value & 0xF8) >> 3];
-            triangleFreq = triangleBaseFreq = ((value & 0x07) << 8) | (triangleBaseFreq & 0x0FF);
+            triangleBaseFreq = ((value & 0x07) << 8) | (triangleBaseFreq & 0x0FF);
             triangleFlags |= 0x01; // Linear counter reload
             break;
 
