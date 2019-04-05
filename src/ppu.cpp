@@ -442,7 +442,7 @@ void registerWrite(uint16_t address, uint8_t value)
 
         case 0x2007: // PPUDATA
             // Write a value to PPU memory
-            memory[memoryMirror(ppuAddress)] = value;
+            memory[memoryMirror(ppuAddress)] = (ppuAddress < 0x3F00) ? value : value % 0x40;
             ppuAddress += (control & 0x04) ? 32 : 1;
             break;
 
