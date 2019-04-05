@@ -413,6 +413,10 @@ void t__(uint8_t *src, uint8_t *dst)
     // Transfer one register to another
     *dst = *src;
 
+    // Don't set flags when transferring to the stack pointer
+    if (dst == &stackPointer)
+        return;
+
     (*dst & 0x80) ? se_(0x80) : cl_(0x80); // N
     (*dst == 0)   ? se_(0x02) : cl_(0x02); // Z
 }
