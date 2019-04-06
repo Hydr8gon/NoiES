@@ -24,13 +24,12 @@
 #include "../config.h"
 #include "../mutex.h"
 
-int outSamples;
-AudioOutBuffer audioBuffer, *audioReleasedBuffer;
+bool paused;
+
+AudioOutBuffer *audioBuffer;
+u32 count;
 
 const u32 defaultKeyMap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L | KEY_R };
-
-bool paused;
-AppletHookCookie cookie;
 
 const vector<string> controlNames =
 {
@@ -92,24 +91,6 @@ const vector<string> pauseNames =
     "File Browser"
 };
 
-void setupAudioBuffer()
-{
-    // Dynamically switch audio sample rate when the system is docked/undocked
-    // For some reason both modes sound best with different sample rates
-    outSamples = (appletGetOperationMode() == AppletOperationMode_Handheld) ? 1440 : 2048;
-    audioBuffer.next = NULL;
-    audioBuffer.buffer = new s16[(outSamples + 0xFFF) & ~0xFFF];
-    audioBuffer.buffer_size = (outSamples * sizeof(s16) + 0xFFF) & ~0xFFF;
-    audioBuffer.data_size = outSamples * sizeof(s16);
-    audioBuffer.data_offset = 0;
-}
-
-void onAppletHook(AppletHookType hook, void *param)
-{
-    if (hook == AppletHookType_OnOperationMode || hook == AppletHookType_OnPerformanceMode)
-        setupAudioBuffer();
-}
-
 void runCore(void *args)
 {
     while (!paused)
@@ -120,9 +101,14 @@ void audioOutput(void *args)
 {
     while (!paused)
     {
-        for (int i = 0; i < outSamples; i++)
-            ((s16*)audioBuffer.buffer)[i] = apu::audioSample(1.15f);
-        audoutPlayBuffer(&audioBuffer, &audioReleasedBuffer);
+        audoutWaitPlayFinish(&audioBuffer, &count, U64_MAX);
+        for (int i = 0; i < 1024; i++)
+        {
+            s16 sample = apu::audioSample(2.3f);
+            ((s16*)audioBuffer->buffer)[i * 2]     = sample;
+            ((s16*)audioBuffer->buffer)[i * 2 + 1] = sample;
+        }
+        audoutAppendAudioOutBuffer(audioBuffer);
     }
 }
 
@@ -130,7 +116,6 @@ void startCore()
 {
     paused = false;
     appletLockExit();
-    appletHook(&cookie, onAppletHook, NULL);
     audoutInitialize();
     audoutStartAudioOut();
     setupAudioBuffer();
@@ -147,7 +132,6 @@ void stopCore()
     paused = true;
     audoutStopAudioOut();
     audoutExit();
-    appletUnhook(&cookie);
     appletUnlockExit();
 }
 

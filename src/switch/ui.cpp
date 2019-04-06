@@ -21,6 +21,7 @@
 #include <chrono>
 #include <cstring>
 #include <dirent.h>
+#include <malloc.h>
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -35,6 +36,9 @@ EGLDisplay display;
 EGLContext context;
 EGLSurface surface;
 GLuint program, vao, vbo, texture;
+
+AudioOutBuffer audioBuffers[2];
+s16 *audioData[2];
 
 const int charWidth[] =
 {
@@ -424,6 +428,23 @@ u32 messageScreen(string title, vector<string> text, bool exit)
         u32 pressed = hidKeysDown(CONTROLLER_P1_AUTO);
         if ((!exit && pressed) || (pressed & KEY_PLUS))
             return pressed;
+    }
+}
+
+void setupAudioBuffer()
+{
+    for (int i = 0; i < 2; i++)
+    {
+        int size = 1024 * 2 * sizeof(s16);
+        int alignedSize = (size + 0xFFF) & ~0xFFF;
+        audioData[i] = (s16*)memalign(0x1000, size);
+        memset(audioData[i], 0, alignedSize);
+        audioBuffers[i].next = NULL;
+        audioBuffers[i].buffer = audioData[i];
+        audioBuffers[i].buffer_size = alignedSize;
+        audioBuffers[i].data_size = size;
+        audioBuffers[i].data_offset = 0;
+        audoutAppendAudioOutBuffer(&audioBuffers[i]);
     }
 }
 

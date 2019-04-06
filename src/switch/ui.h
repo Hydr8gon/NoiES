@@ -55,6 +55,8 @@ void refreshDisplay();
 u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> icons, vector<string> items, vector<Value> values, int *selection);
 u32 messageScreen(string title, vector<string> text, bool exit);
 
+void setupAudioBuffer();
+
 vector<string> dirContents(string directory, string extension);
 
 #endif // UI_H
