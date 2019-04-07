@@ -24,6 +24,8 @@
 #include "../config.h"
 #include "../mutex.h"
 
+u32 *fileIcon, *folderIcon;
+
 bool paused;
 
 AudioOutBuffer *audioBuffer;
@@ -199,7 +201,17 @@ bool fileBrowser()
     while (true)
     {
         vector<string> files = dirContents(romPath, ".nes");
-        u32 pressed = menuScreen("NoiES", "Exit", "Settings", {}, files, {}, &selection);
+        vector<Icon> icons;
+
+        for (unsigned int i = 0; i < files.size(); i++)
+        {
+            if (files[i].find(".nes", (files[i].length() - 4)) != string::npos)
+                icons.push_back({fileIcon, 64});
+            else
+                icons.push_back({folderIcon, 64});
+        }
+
+        u32 pressed = menuScreen("NoiES", "Exit", "Settings", icons, files, {}, &selection);
 
         if (pressed & KEY_A && files.size() > 0)
         {
@@ -285,6 +297,12 @@ int main(int argc, char **argv)
 {
     initRenderer();
     config::load();
+
+    romfsInit();
+    string theme = (systemTheme == ColorSetId_Light) ? "light" : "dark";
+    folderIcon = bmpTexture("romfs:/folder-" + theme + ".bmp");
+    fileIcon = bmpTexture("romfs:/file-" + theme + ".bmp");
+    romfsExit();
 
     if (!fileBrowser())
     {
