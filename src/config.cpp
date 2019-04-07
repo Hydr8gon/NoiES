@@ -31,6 +31,8 @@ int screenFiltering    = 0;
 int frameLimiter       = 1;
 int keyMap[8];
 
+string lastPath;
+
 typedef struct
 {
     string name;
@@ -65,7 +67,8 @@ void load()
         string line = read;
         for (unsigned int i = 0; i < settings.size(); i++)
         {
-            if (line.substr(0, line.rfind("=")) == settings[i].name)
+            string name = line.substr(0, line.rfind("="));
+            if (name == settings[i].name)
             {
                 try
                 {
@@ -75,6 +78,10 @@ void load()
                 {
                     // Keep the default value if the config value is invalid
                 }
+            }
+            else if (name == "lastPath")
+            {
+                lastPath = line.substr(line.rfind("=") + 1);
             }
         }
     }
@@ -88,6 +95,7 @@ void save()
     FILE *config = fopen("noies.ini", "w");
     for (unsigned int i = 0; i < settings.size(); i++)
         fputs((settings[i].name + "=" + to_string(*settings[i].value) +"\n").c_str(), config);
+    fputs(("lastPath=" + lastPath).c_str(), config);
     fclose(config);
 }
 

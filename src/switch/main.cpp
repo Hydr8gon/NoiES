@@ -193,7 +193,7 @@ void settingsMenu()
 
 bool fileBrowser()
 {
-    string romPath = "sdmc:/";
+    string romPath = (config::lastPath == "") ? "sdmc:/" : config::lastPath;
     int selection = 0;
 
     while (true)
@@ -220,7 +220,10 @@ bool fileBrowser()
                     messageScreen("Unable to load ROM", message, true);
                     return false;
                 }
-                break;
+
+                config::lastPath = romPath.substr(0, romPath.rfind("/"));
+                config::save();
+                return true;
             }
         }
         else if (pressed & KEY_B && romPath != "sdmc:/")
@@ -237,8 +240,6 @@ bool fileBrowser()
             return false;
         }
     }
-
-    return true;
 }
 
 bool pauseMenu()

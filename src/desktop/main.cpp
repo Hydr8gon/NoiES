@@ -108,16 +108,21 @@ void onExit()
 
 int main(int argc, char **argv)
 {
-    if (argc < 2)
+    config::load();
+
+    if (argc < 2 && config::lastPath == "")
     {
         printf("Please specify a ROM to load.\n");
         return 1;
     }
 
-    if (core::loadRom(argv[1]) != 0)
-        return 1;
+    if (argc < 2)
+        printf("No ROM specified. Loading previous ROM.\n");
+    else
+        config::lastPath = argv[1];
 
-    config::load();
+    if (core::loadRom(config::lastPath) != 0)
+        return 1;
 
     glutInit(&argc, argv);
     glutInitWindowSize(256, 240);

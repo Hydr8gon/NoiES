@@ -20,6 +20,8 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <string>
+
 namespace config
 {
 
@@ -27,6 +29,8 @@ extern int disableSpriteLimit;
 extern int screenFiltering;
 extern int frameLimiter;
 extern int keyMap[8];
+
+extern std::string lastPath;
 
 void load();
 void save();
