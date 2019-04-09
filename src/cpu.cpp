@@ -35,7 +35,7 @@ uint16_t programCounter;
 uint8_t accumulator, registerX, registerY;
 uint8_t flags; // NVBBDIZC
 uint8_t stackPointer;
-bool interrupts[3]; // NMI, RST, IRQ
+bool interrupts[4]; // NMI, RST, IRQ, BRK
 
 uint8_t inputMask, inputShift;
 
@@ -317,11 +317,8 @@ void b__(bool condition)
 void brk()
 {
     // Break
-    if (!(flags & 0x04))
-    {
-        se_(0x10); // B
-        interrupts[2] = true;
-    }
+    se_(0x10); // B
+    interrupts[3] = true;
     programCounter++;
 }
 
@@ -494,6 +491,13 @@ void runCycle()
     // Disable IRQs if the inhibit flag is set
     if (interrupts[2] && (flags & 0x04))
         interrupts[2] = false;
+
+    // Force an IRQ on BRK
+    if (interrupts[3])
+    {
+        interrupts[2] = true;
+        interrupts[3] = false;
+    }
 
     // Handle interrupts
     for (int i = 0; i < 3; i++)
