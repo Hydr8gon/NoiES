@@ -308,10 +308,10 @@ void b__(bool condition)
     if (condition)
     {
         targetCycles++;
-        uint16_t dest = programCounter + value + 1;
-        if ((dest & 0xFF00) != (programCounter & 0xFF00)) // Page cross
+        uint16_t dst = programCounter + value + 1;
+        if ((dst & 0xFF00) != ((programCounter + 1) & 0xFF00)) // Page cross
             targetCycles++;
-        programCounter = dest - 1;
+        programCounter = dst - 1;
     }
 }
 
