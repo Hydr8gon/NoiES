@@ -24,7 +24,7 @@ namespace cpu
 {
 
 extern uint8_t memory[0x10000];
-extern bool interrupts[4];
+extern bool interrupts[3];
 
 extern uint8_t inputMask;
 

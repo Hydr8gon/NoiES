@@ -35,7 +35,7 @@ uint16_t programCounter;
 uint8_t accumulator, registerX, registerY;
 uint8_t flags; // NVBBDIZC
 uint8_t stackPointer;
-bool interrupts[4]; // NMI, RST, IRQ, BRK
+bool interrupts[3]; // NMI, RST, IRQ
 
 uint8_t inputMask, inputShift;
 
@@ -308,18 +308,24 @@ void b__(bool condition)
     if (condition)
     {
         targetCycles++;
-        if ((programCounter & 0xFF) + value > 0xFF) // Page cross
+        uint16_t dest = programCounter + value + 1;
+        if ((dest & 0xFF00) != (programCounter & 0xFF00)) // Page cross
             targetCycles++;
-        programCounter += value;
+        programCounter = dest - 1;
     }
 }
 
 void brk()
 {
     // Break
+    programCounter += 2;
+    ph_(programCounter >> 8);
+    ph_(programCounter);
     se_(0x10); // B
-    interrupts[3] = true;
-    programCounter++;
+    ph_(flags);
+    cl_(0x10); // B
+    se_(0x04); // I
+    programCounter = ((memory[0xFFFF] << 8) | memory[0xFFFE]) - 1;
 }
 
 void cp_(uint8_t reg, uint8_t *src)
@@ -492,13 +498,6 @@ void runCycle()
     if (interrupts[2] && (flags & 0x04))
         interrupts[2] = false;
 
-    // Force an IRQ on BRK
-    if (interrupts[3])
-    {
-        interrupts[2] = true;
-        interrupts[3] = false;
-    }
-
     // Handle interrupts
     for (int i = 0; i < 3; i++)
     {
@@ -507,7 +506,6 @@ void runCycle()
             ph_(programCounter >> 8);
             ph_(programCounter);
             ph_(flags);
-            cl_(0x10); // B
             se_(0x04); // I
             programCounter = (memory[0xFFFB + i * 2] << 8) | memory[0xFFFA + i * 2];
             targetCycles += 7;
@@ -555,7 +553,7 @@ void runCycle()
         case 0xD0: b__(!(flags & 0x02)); targetCycles += 2; break; // BNE
         case 0xF0: b__( (flags & 0x02)); targetCycles += 2; break; // BEQ
 
-        case 0x00: brk(); break; // BRK
+        case 0x00: brk(); targetCycles += 7; break; // BRK
 
         case 0xC9: cp_(accumulator, immediate());     targetCycles += 2; break; // CMP immediate
         case 0xC5: cp_(accumulator, zeroPage());      targetCycles += 3; break; // CMP zero page
@@ -616,16 +614,16 @@ void runCycle()
         case 0xB1: ld_(&accumulator, indirectY(true)); targetCycles += 5; break; // LDA indirect Y
 
         case 0xA2: ld_(&registerX, immediate());     targetCycles += 2; break; // LDX immediate
-        case 0xA6: ld_(&registerX, zeroPage());      targetCycles += 2; break; // LDX zero page
-        case 0xB6: ld_(&registerX, zeroPageY());     targetCycles += 2; break; // LDX zero page Y
-        case 0xAE: ld_(&registerX, absolute());      targetCycles += 3; break; // LDX absolute
-        case 0xBE: ld_(&registerX, absoluteY(true)); targetCycles += 3; break; // LDX absolute Y
+        case 0xA6: ld_(&registerX, zeroPage());      targetCycles += 3; break; // LDX zero page
+        case 0xB6: ld_(&registerX, zeroPageY());     targetCycles += 4; break; // LDX zero page Y
+        case 0xAE: ld_(&registerX, absolute());      targetCycles += 4; break; // LDX absolute
+        case 0xBE: ld_(&registerX, absoluteY(true)); targetCycles += 4; break; // LDX absolute Y
 
         case 0xA0: ld_(&registerY, immediate());     targetCycles += 2; break; // LDY immediate
-        case 0xA4: ld_(&registerY, zeroPage());      targetCycles += 2; break; // LDY zero page
-        case 0xB4: ld_(&registerY, zeroPageX());     targetCycles += 2; break; // LDY zero page X
-        case 0xAC: ld_(&registerY, absolute());      targetCycles += 3; break; // LDY absolute
-        case 0xBC: ld_(&registerY, absoluteX(true)); targetCycles += 3; break; // LDY absolute X
+        case 0xA4: ld_(&registerY, zeroPage());      targetCycles += 3; break; // LDY zero page
+        case 0xB4: ld_(&registerY, zeroPageX());     targetCycles += 4; break; // LDY zero page X
+        case 0xAC: ld_(&registerY, absolute());      targetCycles += 4; break; // LDY absolute
+        case 0xBC: ld_(&registerY, absoluteX(true)); targetCycles += 4; break; // LDY absolute X
 
         case 0x4A: lsr(&accumulator);     targetCycles += 2; break; // LSR accumulator
         case 0x46: lsr(zeroPage());       targetCycles += 5; break; // LSR zero page
