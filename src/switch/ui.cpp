@@ -31,16 +31,17 @@
 
 ColorSetId systemTheme;
 u32 *font, *fontColor;
+u32 *fileIcon, *folderIcon;
 
 EGLDisplay display;
 EGLContext context;
 EGLSurface surface;
-GLuint program, vao, vbo, texture;
+GLuint program, vbo, texture;
 
 AudioOutBuffer audioBuffers[2];
 s16 *audioData[2];
 
-const int charWidth[] =
+const int charWidths[] =
 {
     11, 10, 11, 20, 19, 28, 25,  7, 12, 12,
     15, 25,  9, 11,  9, 17, 21, 21, 21, 21,
@@ -60,36 +61,40 @@ typedef struct
     float texCoord[2];
 } Vertex;
 
-const char *vertexShader =
-    "#version 330 core\n"
-    "precision mediump float;"
+const char *vertexShader = R"(
+    #version 330 core
+    precision mediump float;
 
-    "layout (location = 0) in vec2 inPos;"
-    "layout (location = 1) in vec2 inTexCoord;"
-    "out vec2 vtxTexCoord;"
+    layout (location = 0) in vec2 inPos;
+    layout (location = 1) in vec2 inTexCoord;
+    out vec2 vtxTexCoord;
 
-    "void main()"
-    "{"
-        "gl_Position = vec4(-1.0 + inPos.x / 640, 1.0 - inPos.y / 360, 0.0, 1.0);"
-        "vtxTexCoord = inTexCoord;"
-    "}";
+    void main()
+    {
+        gl_Position = vec4(-1.0 + inPos.x / 640, 1.0 - inPos.y / 360, 0.0, 1.0);
+        vtxTexCoord = inTexCoord;
+    }
+)";
 
-const char *fragmentShader =
-    "#version 330 core\n"
-    "precision mediump float;"
+const char *fragmentShader = R"(
+    #version 330 core
+    precision mediump float;
 
-    "in vec2 vtxTexCoord;"
-    "out vec4 fragColor;"
-    "uniform sampler2D texDiffuse;"
+    in vec2 vtxTexCoord;
+    out vec4 fragColor;
+    uniform sampler2D texDiffuse;
 
-    "void main()"
-    "{"
-        "fragColor = texture(texDiffuse, vtxTexCoord);"
-    "}";
+    void main()
+    {
+        fragColor = texture(texDiffuse, vtxTexCoord);
+    };
+)";
 
 u32 *bmpTexture(string filename)
 {
     FILE *bmp = fopen(filename.c_str(), "rb");
+    if (!bmp)
+        return NULL;
 
     // Read the header
     u8 header[54];
@@ -126,19 +131,21 @@ void loadTheme()
     string theme = (systemTheme == ColorSetId_Light) ? "light" : "dark";
     font = bmpTexture("romfs:/font-" + theme + ".bmp");
     fontColor = bmpTexture("romfs:/fontcolor-" + theme + ".bmp");
+    fileIcon = bmpTexture("romfs:/file-" + theme + ".bmp");
+    folderIcon = bmpTexture("romfs:/folder-" + theme + ".bmp");
     romfsExit();
 }
 
 void initRenderer()
 {
-    EGLConfig config;
-    EGLint numConfigs;
-
+    // Initialize EGL
     display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
     eglInitialize(display, NULL, NULL);
     eglBindAPI(EGL_OPENGL_API);
+    EGLConfig config;
+    EGLint numConfigs;
     eglChooseConfig(display, {}, &config, 1, &numConfigs);
-    surface = eglCreateWindowSurface(display, config, (char*)"", NULL);
+    surface = eglCreateWindowSurface(display, config, nwindowGetDefault(), NULL);
     context = eglCreateContext(display, config, EGL_NO_CONTEXT, {});
     eglMakeCurrent(display, surface, surface, context);
 
@@ -160,9 +167,6 @@ void initRenderer()
     glDeleteShader(vertShader);
     glDeleteShader(fragShader);
 
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
-
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
@@ -178,30 +182,33 @@ void initRenderer()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    glUseProgram(program);
-
     loadTheme();
 }
 
 void deinitRenderer()
 {
+    glDeleteProgram(program);
     glDeleteTextures(1, &texture);
     glDeleteBuffers(1, &vbo);
-    glDeleteVertexArrays(1, &vao);
-    glDeleteProgram(program);
 
+    // Deinitialize EGL
     eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     eglDestroyContext(display, context);
-    context = NULL;
     eglDestroySurface(display, surface);
-    surface = NULL;
     eglTerminate(display);
-    display = NULL;
 }
 
-void drawTexture(u32 *texture, int texWidth, int texHeight, int rotation, bool reverse, float x, float y, float width, float height)
+void setSurface()
 {
-    Vertex image[] =
+    glUseProgram(program);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, 1280, 720);
+    glBindVertexArray(0);
+}
+
+void drawImage(u32 *image, int imageWidth, int imageHeight, int rotation, bool reverse, float x, float y, float width, float height)
+{
+    Vertex dimensions[] =
     {
         { { x + width, y + height }, { 1.0f, 1.0f } },
         { { x,         y + height }, { 0.0f, 1.0f } },
@@ -209,27 +216,31 @@ void drawTexture(u32 *texture, int texWidth, int texHeight, int rotation, bool r
         { { x + width, y          }, { 1.0f, 0.0f } }
     };
 
+    // Rotate the image 90 degrees clockwise for every rotation
     for (int i = 0; i < rotation; i++)
     {
-        // Rotate the texture 90 degrees clockwise
-        int size = sizeof(image[0].position);
-        Vertex *copy = new Vertex[sizeof(image) / sizeof(Vertex)];
-        memcpy(copy, image, sizeof(image));
+        int size = sizeof(dimensions[0].position);
+        Vertex *copy = new Vertex[sizeof(dimensions) / sizeof(Vertex)];
+        memcpy(copy, dimensions, sizeof(dimensions));
         for (int k = 0; k < 8; k += 4)
         {
-            memcpy(image[k    ].position, copy[k + 1].position, size);
-            memcpy(image[k + 1].position, copy[k + 2].position, size);
-            memcpy(image[k + 2].position, copy[k + 3].position, size);
-            memcpy(image[k + 3].position, copy[k    ].position, size);
+            memcpy(dimensions[k    ].position, copy[k + 1].position, size);
+            memcpy(dimensions[k + 1].position, copy[k + 2].position, size);
+            memcpy(dimensions[k + 2].position, copy[k + 3].position, size);
+            memcpy(dimensions[k + 3].position, copy[k    ].position, size);
         }
         delete[] copy;
     }
 
-    int format1 = reverse ? GL_BGRA : GL_RGBA;
-    int format2 = reverse ? GL_UNSIGNED_INT_8_8_8_8_REV : GL_UNSIGNED_INT_8_8_8_8;
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(dimensions), dimensions, GL_DYNAMIC_DRAW);
 
-    glBufferData(GL_ARRAY_BUFFER, sizeof(image), image, GL_DYNAMIC_DRAW);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, texWidth, texHeight, 0, format1, format2, texture);
+    GLenum format = reverse ? GL_BGRA : GL_RGBA;
+    GLenum type = reverse ? GL_UNSIGNED_INT_8_8_8_8_REV : GL_UNSIGNED_INT_8_8_8_8;
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, imageWidth, imageHeight, 0, format, type, image);
+
+    setSurface();
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 }
 
@@ -238,7 +249,7 @@ void drawString(string str, float x, float y, int size, bool color, bool right)
     // Find the total width of the string texture
     int width = 0;
     for (unsigned int i = 0; i < str.size(); i++)
-        width += charWidth[str[i] - 32];
+        width += charWidths[str[i] - 32];
 
     u32 *fontSel = color ? fontColor : font;
     u32 *tex = new u32[width * 48];
@@ -251,21 +262,21 @@ void drawString(string str, float x, float y, int size, bool color, bool right)
         int row = (str[i] - 32) / 10;
 
         for (int j = 0; j < 48; j++)
-            memcpy(&tex[j * width + currentX], &fontSel[(row * 512 + col) * 48 + j * 512], charWidth[str[i] - 32] * sizeof(u32));
+            memcpy(&tex[j * width + currentX], &fontSel[(row * 512 + col) * 48 + j * 512], charWidths[str[i] - 32] * sizeof(u32));
 
-        currentX += charWidth[str[i] - 32];
+        currentX += charWidths[str[i] - 32];
     }
 
     if (right) // Align the string to the right
         x -= width * size / 48;
 
-    drawTexture(tex, width, 48, 0, false, x, y, width * size / 48, size);
+    drawImage(tex, width, 48, 0, false, x, y, width * size / 48, size);
     delete[] tex;
 }
 
 void drawLine(float x1, float y1, float x2, float y2, bool color)
 {
-    Vertex line[] =
+    Vertex dimensions[] =
     {
         { { x1, y1 }, { 0.0f, 0.0f } },
         { { x2, y2 }, { 0.0f, 0.0f } }
@@ -274,19 +285,26 @@ void drawLine(float x1, float y1, float x2, float y2, bool color)
     u8 tex[3];
     memset(tex, (systemTheme == ColorSetId_Light) ? (color ? 205 : 45) : (color ? 77 : 255), sizeof(tex));
 
-    glBufferData(GL_ARRAY_BUFFER, sizeof(line), line, GL_DYNAMIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(dimensions), dimensions, GL_DYNAMIC_DRAW);
+
+    glBindTexture(GL_TEXTURE_2D, texture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, tex);
+
+    setSurface();
     glDrawArrays(GL_LINES, 0, 2);
 }
 
 void setTextureFiltering(bool enabled)
 {
+    glBindTexture(GL_TEXTURE_2D, texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, enabled ? GL_LINEAR : GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, enabled ? GL_LINEAR : GL_NEAREST);
 }
 
 void clearDisplay(u8 color)
 {
+    setSurface();
     float clear = (float)color / 255;
     glClearColor(clear, clear, clear, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -387,7 +405,7 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
 
                 if (icons.size() > row)
                 {
-                    drawTexture(icons[row].texture, icons[row].size, icons[row].size, 0, false, 105, 127 + i * 70, 64, 64);
+                    drawImage(icons[row].texture, icons[row].size, icons[row].size, 0, false, 105, 127 + i * 70, 64, 64);
                     drawString(items[row], 184, 140 + i * 70, 38, row == position, false);
                 }
                 else

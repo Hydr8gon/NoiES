@@ -39,13 +39,13 @@ typedef struct
 } Value;
 
 extern ColorSetId systemTheme;
-
-u32 *bmpTexture(string filename);
+extern u32 *fileIcon;
+extern u32 *folderIcon;
 
 void initRenderer();
 void deinitRenderer();
 
-void drawTexture(u32 *texture, int texWidth, int texHeight, int rotation, bool reverse, float x, float y, float width, float height);
+void drawImage(u32 *image, int imageWidth, int imageHeight, int rotation, bool reverse, float x, float y, float width, float height);
 void drawString(string str, float x, float y, int size, bool color, bool right);
 void drawLine(float x1, float y1, float x2, float y2, bool color);
 void setTextureFiltering(bool enabled);

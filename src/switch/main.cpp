@@ -24,8 +24,6 @@
 #include "../config.h"
 #include "../mutex.h"
 
-u32 *fileIcon, *folderIcon;
-
 bool paused;
 
 AudioOutBuffer *audioBuffer;
@@ -123,9 +121,9 @@ void startCore()
     setupAudioBuffer();
     setTextureFiltering(config::screenFiltering);
     Thread core, audio;
-    threadCreate(&core, runCore, NULL, 0x80000, 0x30, 1);
+    threadCreate(&core, runCore, NULL, 0x8000, 0x30, 1);
     threadStart(&core);
-    threadCreate(&audio, audioOutput, NULL, 0x80000, 0x30, 2);
+    threadCreate(&audio, audioOutput, NULL, 0x8000, 0x30, 2);
     threadStart(&audio);
 }
 
@@ -298,12 +296,6 @@ int main(int argc, char **argv)
     initRenderer();
     config::load();
 
-    romfsInit();
-    string theme = (systemTheme == ColorSetId_Light) ? "light" : "dark";
-    folderIcon = bmpTexture("romfs:/folder-" + theme + ".bmp");
-    fileIcon = bmpTexture("romfs:/file-" + theme + ".bmp");
-    romfsExit();
-
     if (!fileBrowser())
     {
         deinitRenderer();
@@ -334,13 +326,13 @@ int main(int argc, char **argv)
 
         clearDisplay(0);
         mutex::lock(ppu::displayMutex);
-        drawTexture(ppu::displayBuffer, 256, 240, 0, false, 256, 0, 768, 720);
+        drawImage(ppu::displayBuffer, 256, 240, 0, false, 256, 0, 768, 720);
         mutex::unlock(ppu::displayMutex);
         refreshDisplay();
     }
 
     core::closeRom();
-    stopCore();
     deinitRenderer();
+    stopCore();
     return 0;
 }
