@@ -31,7 +31,7 @@
 
 ColorSetId systemTheme;
 u32 *font, *fileIcon, *folderIcon;
-u32 uiColor, uiSecColor, fontSecColor, lineSecColor;
+u32 uiPalette[6];
 
 EGLDisplay display;
 EGLContext context;
@@ -143,17 +143,21 @@ void loadTheme()
     // Set the theme colors
     if (systemTheme == ColorSetId_Light)
     {
-        uiColor      = rgbaToU32(235, 235, 235, 255);
-        uiSecColor   = rgbaToU32( 45,  45,  45, 255);
-        fontSecColor = rgbaToU32( 50,  80, 240, 255);
-        lineSecColor = rgbaToU32(205, 205, 205, 255);
+        uiPalette[0] = rgbaToU32(235, 235, 235, 255);
+        uiPalette[1] = rgbaToU32( 45,  45,  45, 255);
+        uiPalette[2] = rgbaToU32(205, 205, 205, 255);
+        uiPalette[3] = rgbaToU32(255, 255, 255, 255);
+        uiPalette[4] = rgbaToU32( 50, 215, 210, 255);
+        uiPalette[5] = rgbaToU32( 50,  80, 240, 255);
     }
     else
     {
-        uiColor      = rgbaToU32( 45,  45,  45, 255);
-        uiSecColor   = rgbaToU32(255, 255, 255, 255);
-        fontSecColor = rgbaToU32(  0, 255, 200, 255);
-        lineSecColor = rgbaToU32( 75,  75,  75, 255);
+        uiPalette[0] = rgbaToU32( 45,  45,  45, 255);
+        uiPalette[1] = rgbaToU32(255, 255, 255, 255);
+        uiPalette[2] = rgbaToU32( 75,  75,  75, 255);
+        uiPalette[3] = rgbaToU32( 35,  35,  35, 255);
+        uiPalette[4] = rgbaToU32( 85, 185, 225, 255);
+        uiPalette[5] = rgbaToU32(  0, 255, 200, 255);
     }
 }
 
@@ -357,10 +361,10 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
     {
         clearDisplay((systemTheme == ColorSetId_Light) ? 235 : 45);
 
-        drawString(title, 72, 30, 42, false, uiSecColor);
-        drawLine(30, 88, 1250, 88, uiSecColor);
-        drawLine(30, 648, 1250, 648, uiSecColor);
-        drawString(buttons, 1218, 667, 34, true, uiSecColor);
+        drawString(title, 72, 30, 42, false, uiPalette[1]);
+        drawLine(30, 88, 1250, 88, uiPalette[1]);
+        drawLine(30, 648, 1250, 648, uiPalette[1]);
+        drawString(buttons, 1218, 667, 34, true, uiPalette[1]);
 
         hidScanInput();
         u32 pressed = hidKeysDown(CONTROLLER_P1_AUTO);
@@ -409,7 +413,7 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
         }
 
         if (items.size() > 0)
-            drawLine(90, 124, 1190, 124, lineSecColor);
+            drawLine(90, 124, 1190, 124, uiPalette[2]);
 
         // Draw the rows
         for (unsigned int i = 0; i < 7; i++)
@@ -424,21 +428,31 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
                 else
                    row = i + position - 3;
 
-                u32 color = (row == position) ? fontSecColor : uiSecColor;
-                if (icons.size() > row)
+                if (row == position)
                 {
-                    drawImage(icons[row].texture, icons[row].size, icons[row].size, false, 105, 127 + i * 70, 64, 64, 0);
-                    drawString(items[row], 184, 140 + i * 70, 38, false, color);
+                    drawImage(&uiPalette[3], 1, 1, false,   90, 125 + i * 70, 1100, 69, 0);
+                    drawImage(&uiPalette[4], 1, 1, false,   89, 121 + i * 70, 1103,  5, 0);
+                    drawImage(&uiPalette[4], 1, 1, false,   89, 191 + i * 70, 1103,  5, 0);
+                    drawImage(&uiPalette[4], 1, 1, false,   88, 122 + i * 70,    5, 73, 0);
+                    drawImage(&uiPalette[4], 1, 1, false, 1188, 122 + i * 70,    5, 73, 0);
                 }
                 else
                 {
-                    drawString(items[row], 105, 140 + i * 70, 38, false, color);
+                    drawLine(90, 194 + i * 70, 1190, 194 + i * 70, uiPalette[2]);
+                }
+
+                if (icons.size() > row)
+                {
+                    drawImage(icons[row].texture, icons[row].size, icons[row].size, false, 105, 126 + i * 70, 64, 64, 0);
+                    drawString(items[row], 184, 140 + i * 70, 38, false, uiPalette[1]);
+                }
+                else
+                {
+                    drawString(items[row], 105, 140 + i * 70, 38, false, uiPalette[1]);
                 }
 
                 if (values.size() > row && *values[row].value < (int)values[row].names.size())
-                    drawString(values[row].names[*values[row].value], 1175, 143 + i * 70, 32, true, color);
-
-                drawLine(90, 194 + i * 70, 1190, 194 + i * 70, lineSecColor);
+                    drawString(values[row].names[*values[row].value], 1175, 143 + i * 70, 32, true, uiPalette[5]);
             }
         }
 
@@ -450,15 +464,15 @@ u32 messageScreen(string title, vector<string> text, bool exit)
 {
     clearDisplay((systemTheme == ColorSetId_Light) ? 235 : 45);
 
-    drawString(title, 72, 30, 42, false, uiSecColor);
-    drawLine(30, 88, 1250, 88, uiSecColor);
-    drawLine(30, 648, 1250, 648, uiSecColor);
+    drawString(title, 72, 30, 42, false, uiPalette[1]);
+    drawLine(30, 88, 1250, 88, uiPalette[1]);
+    drawLine(30, 648, 1250, 648, uiPalette[1]);
 
     if (exit)
-        drawString("\x83 Exit", 1218, 667, 34, true, uiSecColor);
+        drawString("\x83 Exit", 1218, 667, 34, true, uiPalette[1]);
 
     for (unsigned int i = 0; i < text.size(); i++)
-        drawString(text[i], 90, 124 + i * 38, 38, false, uiSecColor);
+        drawString(text[i], 90, 124 + i * 38, 38, false, uiPalette[1]);
 
     refreshDisplay();
 
