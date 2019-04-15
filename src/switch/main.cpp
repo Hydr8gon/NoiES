@@ -326,13 +326,13 @@ int main(int argc, char **argv)
 
         clearDisplay(0);
         mutex::lock(ppu::displayMutex);
-        drawImage(ppu::displayBuffer, 256, 240, 0, false, 256, 0, 768, 720);
+        drawImage(ppu::displayBuffer, 256, 240, false, 256, 0, 768, 720, 0);
         mutex::unlock(ppu::displayMutex);
         refreshDisplay();
     }
 
     core::closeRom();
-    deinitRenderer();
     stopCore();
+    deinitRenderer();
     return 0;
 }

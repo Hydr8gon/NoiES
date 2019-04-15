@@ -197,11 +197,13 @@ void runCycle()
                 fetchPixels();
             uint8_t color = pixelBuffer[x % 8 + scrollX];
 
+            // Get the pixel type
+            uint32_t *pixel = &framebuffer[scanline * 256 + x];
+            uint8_t type = *pixel;
+            *pixel |= 0xFF;
+
             if ((x >= 8 || (mask & 0x02)) && (color & 0x03) != 0)
             {
-                uint32_t *pixel = &framebuffer[scanline * 256 + x];
-                uint8_t type = *pixel;
-
                 // Check for a sprite 0 hit
                 if (type < 0xFD)
                     status |= 0x40;

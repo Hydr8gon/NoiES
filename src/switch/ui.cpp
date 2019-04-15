@@ -30,8 +30,8 @@
 #include "ui.h"
 
 ColorSetId systemTheme;
-u32 *font, *fontColor;
-u32 *fileIcon, *folderIcon;
+u32 *font, *fileIcon, *folderIcon;
+u32 uiColor, uiSecColor, fontSecColor, lineSecColor;
 
 EGLDisplay display;
 EGLContext context;
@@ -43,16 +43,16 @@ s16 *audioData[2];
 
 const int charWidths[] =
 {
-    11, 10, 11, 20, 19, 28, 25,  7, 12, 12,
-    15, 25,  9, 11,  9, 17, 21, 21, 21, 21,
-    21, 21, 21, 21, 21, 21,  9,  9, 26, 25,
-    26, 18, 29, 24, 21, 24, 27, 20, 20, 27,
-    24, 10, 17, 21, 16, 31, 27, 29, 20, 29,
-    20, 19, 21, 26, 25, 37, 22, 21, 24, 12,
-    17, 12, 18, 17, 10, 20, 22, 19, 22, 20,
-    10, 22, 20,  9, 12, 19,  9, 30, 20, 22,
-    22, 22, 13, 17, 13, 20, 17, 29, 18, 18,
-    17, 10,  9, 10, 25, 32, 40, 40, 40, 40
+    11,  9, 11, 20, 18, 28, 24,  7, 12, 12,
+    14, 24,  9, 12,  9, 16, 21, 21, 21, 21,
+    21, 21, 21, 21, 21, 21,  9,  9, 26, 24,
+    26, 18, 28, 24, 21, 24, 26, 20, 20, 27,
+    23,  9, 17, 21, 16, 31, 27, 29, 19, 29,
+    20, 18, 21, 26, 24, 37, 21, 21, 24, 12,
+    16, 12, 18, 16,  9, 20, 21, 18, 21, 20,
+    10, 20, 20,  8, 12, 19,  9, 30, 20, 21,
+    21, 21, 12, 16, 12, 20, 17, 29, 17, 17,
+    16,  9,  8,  9, 12,  0, 40, 40, 40, 40
 };
 
 typedef struct
@@ -90,15 +90,20 @@ const char *fragmentShader = R"(
     };
 )";
 
-u32 *bmpTexture(string filename)
+u32 rgbaToU32(u8 r, u8 g, u8 b, u8 a)
+{
+    return (r << 24) | (g << 16) | (b << 8) | a;
+}
+
+u32 *bmpToTexture(string filename)
 {
     FILE *bmp = fopen(filename.c_str(), "rb");
     if (!bmp)
         return NULL;
 
     // Read the header
-    u8 header[54];
-    fread(header, sizeof(u8), 54, bmp);
+    u8 header[70];
+    fread(header, sizeof(u8), 70, bmp);
     int width = *(int*)&header[18];
     int height = *(int*)&header[22];
 
@@ -111,7 +116,8 @@ u32 *bmpTexture(string filename)
             u8 b; fread(&b, sizeof(u8), 1, bmp);
             u8 g; fread(&g, sizeof(u8), 1, bmp);
             u8 r; fread(&r, sizeof(u8), 1, bmp);
-            tex[(height - y) * width + x] = (r << 24) | (g << 16) | (b << 8);
+            u8 a; fread(&a, sizeof(u8), 1, bmp);
+            tex[(height - y) * width + x] = rgbaToU32(r, g, b, a);
         }
     }
 
@@ -129,11 +135,26 @@ void loadTheme()
     // Load the font bitmaps corresponding to the theme
     romfsInit();
     string theme = (systemTheme == ColorSetId_Light) ? "light" : "dark";
-    font = bmpTexture("romfs:/font-" + theme + ".bmp");
-    fontColor = bmpTexture("romfs:/fontcolor-" + theme + ".bmp");
-    fileIcon = bmpTexture("romfs:/file-" + theme + ".bmp");
-    folderIcon = bmpTexture("romfs:/folder-" + theme + ".bmp");
+    font = bmpToTexture("romfs:/font.bmp");
+    fileIcon = bmpToTexture("romfs:/file-" + theme + ".bmp");
+    folderIcon = bmpToTexture("romfs:/folder-" + theme + ".bmp");
     romfsExit();
+
+    // Set the theme colors
+    if (systemTheme == ColorSetId_Light)
+    {
+        uiColor      = rgbaToU32(235, 235, 235, 255);
+        uiSecColor   = rgbaToU32( 45,  45,  45, 255);
+        fontSecColor = rgbaToU32( 50,  80, 240, 255);
+        lineSecColor = rgbaToU32(205, 205, 205, 255);
+    }
+    else
+    {
+        uiColor      = rgbaToU32( 45,  45,  45, 255);
+        uiSecColor   = rgbaToU32(255, 255, 255, 255);
+        fontSecColor = rgbaToU32(  0, 255, 200, 255);
+        lineSecColor = rgbaToU32( 75,  75,  75, 255);
+    }
 }
 
 void initRenderer()
@@ -182,6 +203,9 @@ void initRenderer()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     loadTheme();
 }
 
@@ -206,7 +230,7 @@ void setSurface()
     glBindVertexArray(0);
 }
 
-void drawImage(u32 *image, int imageWidth, int imageHeight, int rotation, bool reverse, float x, float y, float width, float height)
+void drawImage(u32 *image, int imageWidth, int imageHeight, bool reverse, float x, float y, float width, float height, int rotation)
 {
     Vertex dimensions[] =
     {
@@ -238,20 +262,19 @@ void drawImage(u32 *image, int imageWidth, int imageHeight, int rotation, bool r
     GLenum format = reverse ? GL_BGRA : GL_RGBA;
     GLenum type = reverse ? GL_UNSIGNED_INT_8_8_8_8_REV : GL_UNSIGNED_INT_8_8_8_8;
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, imageWidth, imageHeight, 0, format, type, image);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, imageWidth, imageHeight, 0, format, type, image);
 
     setSurface();
     glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 }
 
-void drawString(string str, float x, float y, int size, bool color, bool right)
+void drawString(string str, float x, float y, int size, bool right, u32 color)
 {
     // Find the total width of the string texture
     int width = 0;
     for (unsigned int i = 0; i < str.size(); i++)
         width += charWidths[str[i] - 32];
 
-    u32 *fontSel = color ? fontColor : font;
     u32 *tex = new u32[width * 48];
     int currentX = 0;
 
@@ -262,7 +285,8 @@ void drawString(string str, float x, float y, int size, bool color, bool right)
         int row = (str[i] - 32) / 10;
 
         for (int j = 0; j < 48; j++)
-            memcpy(&tex[j * width + currentX], &fontSel[(row * 512 + col) * 48 + j * 512], charWidths[str[i] - 32] * sizeof(u32));
+            for (int k = 0; k < charWidths[str[i] - 32]; k++)
+                tex[j * width + currentX + k] = (color & ~0xFF) | (font[(row * 512 + col) * 48 + j * 512 +  k] & 0xFF);
 
         currentX += charWidths[str[i] - 32];
     }
@@ -270,11 +294,11 @@ void drawString(string str, float x, float y, int size, bool color, bool right)
     if (right) // Align the string to the right
         x -= width * size / 48;
 
-    drawImage(tex, width, 48, 0, false, x, y, width * size / 48, size);
+    drawImage(tex, width, 48, false, x, y, width * size / 48, size, 0);
     delete[] tex;
 }
 
-void drawLine(float x1, float y1, float x2, float y2, bool color)
+void drawLine(float x1, float y1, float x2, float y2, u32 color)
 {
     Vertex dimensions[] =
     {
@@ -282,14 +306,11 @@ void drawLine(float x1, float y1, float x2, float y2, bool color)
         { { x2, y2 }, { 0.0f, 0.0f } }
     };
 
-    u8 tex[3];
-    memset(tex, (systemTheme == ColorSetId_Light) ? (color ? 205 : 45) : (color ? 77 : 255), sizeof(tex));
-
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(dimensions), dimensions, GL_DYNAMIC_DRAW);
 
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, tex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, &color);
 
     setSurface();
     glDrawArrays(GL_LINES, 0, 2);
@@ -336,10 +357,10 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
     {
         clearDisplay((systemTheme == ColorSetId_Light) ? 235 : 45);
 
-        drawString(title, 72, 30, 42, false, false);
-        drawLine(30, 88, 1250, 88, false);
-        drawLine(30, 648, 1250, 648, false);
-        drawString(buttons, 1218, 667, 34, false, true);
+        drawString(title, 72, 30, 42, false, uiSecColor);
+        drawLine(30, 88, 1250, 88, uiSecColor);
+        drawLine(30, 648, 1250, 648, uiSecColor);
+        drawString(buttons, 1218, 667, 34, true, uiSecColor);
 
         hidScanInput();
         u32 pressed = hidKeysDown(CONTROLLER_P1_AUTO);
@@ -388,7 +409,7 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
         }
 
         if (items.size() > 0)
-            drawLine(90, 124, 1190, 124, true);
+            drawLine(90, 124, 1190, 124, lineSecColor);
 
         // Draw the rows
         for (unsigned int i = 0; i < 7; i++)
@@ -403,20 +424,21 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
                 else
                    row = i + position - 3;
 
+                u32 color = (row == position) ? fontSecColor : uiSecColor;
                 if (icons.size() > row)
                 {
-                    drawImage(icons[row].texture, icons[row].size, icons[row].size, 0, false, 105, 127 + i * 70, 64, 64);
-                    drawString(items[row], 184, 140 + i * 70, 38, row == position, false);
+                    drawImage(icons[row].texture, icons[row].size, icons[row].size, false, 105, 127 + i * 70, 64, 64, 0);
+                    drawString(items[row], 184, 140 + i * 70, 38, false, color);
                 }
                 else
                 {
-                    drawString(items[row], 105, 140 + i * 70, 38, row == position, false);
+                    drawString(items[row], 105, 140 + i * 70, 38, false, color);
                 }
 
                 if (values.size() > row && *values[row].value < (int)values[row].names.size())
-                    drawString(values[row].names[*values[row].value], 1175, 143 + i * 70, 32, row == position, true);
+                    drawString(values[row].names[*values[row].value], 1175, 143 + i * 70, 32, true, color);
 
-                drawLine(90, 194 + i * 70, 1190, 194 + i * 70, true);
+                drawLine(90, 194 + i * 70, 1190, 194 + i * 70, lineSecColor);
             }
         }
 
@@ -428,15 +450,15 @@ u32 messageScreen(string title, vector<string> text, bool exit)
 {
     clearDisplay((systemTheme == ColorSetId_Light) ? 235 : 45);
 
-    drawString(title, 72, 30, 42, false, false);
-    drawLine(30, 88, 1250, 88, false);
-    drawLine(30, 648, 1250, 648, false);
+    drawString(title, 72, 30, 42, false, uiSecColor);
+    drawLine(30, 88, 1250, 88, uiSecColor);
+    drawLine(30, 648, 1250, 648, uiSecColor);
 
     if (exit)
-        drawString("\x83 Exit", 1218, 667, 34, false, true);
+        drawString("\x83 Exit", 1218, 667, 34, true, uiSecColor);
 
     for (unsigned int i = 0; i < text.size(); i++)
-        drawString(text[i], 90, 124 + i * 38, 38, false, false);
+        drawString(text[i], 90, 124 + i * 38, 38, false, uiSecColor);
 
     refreshDisplay();
 

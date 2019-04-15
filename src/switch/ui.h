@@ -42,12 +42,14 @@ extern ColorSetId systemTheme;
 extern u32 *fileIcon;
 extern u32 *folderIcon;
 
+u32 rgbaToU32(u8 r, u8 g, u8 b, u8 a);
+
 void initRenderer();
 void deinitRenderer();
 
-void drawImage(u32 *image, int imageWidth, int imageHeight, int rotation, bool reverse, float x, float y, float width, float height);
-void drawString(string str, float x, float y, int size, bool color, bool right);
-void drawLine(float x1, float y1, float x2, float y2, bool color);
+void drawImage(u32 *image, int imageWidth, int imageHeight, bool reverse, float x, float y, float width, float height, int rotation);
+void drawString(string str, float x, float y, int size, bool right, u32 color);
+void drawLine(float x1, float y1, float x2, float y2, u32 color);
 void setTextureFiltering(bool enabled);
 void clearDisplay(u8 color);
 void refreshDisplay();
