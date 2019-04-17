@@ -38,6 +38,8 @@ EGLContext context;
 EGLSurface surface;
 GLuint program, vbo, texture;
 
+touchPosition touch;
+
 AudioOutBuffer audioBuffers[2];
 s16 *audioData[2];
 
@@ -415,7 +417,6 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
         if (items.size() > 0)
             drawLine(90, 124, 1190, 124, uiPalette[2]);
 
-        // Draw the rows
         for (unsigned int i = 0; i < 7; i++)
         {
             if (i < items.size())
@@ -426,8 +427,21 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
                 else if (position > items.size() - 4)
                     row = items.size() - 7 + i;
                 else
-                   row = i + position - 3;
+                    row = i + position - 3;
 
+                // Simulate an A press on a selection if touched
+                if (hidTouchCount() > 0)
+                {
+                    hidTouchRead(&touch, 0);
+                }
+                else if (touch.px >= 90 && touch.px < 1190 && touch.py >= 124 + i * 70 && touch.py < 194 + i * 70)
+                {
+                    touch.px = 0;
+                    *selection = row;
+                    return KEY_A;
+                }
+
+                // Draw the selection box and row lines
                 if (row == position)
                 {
                     drawImage(&uiPalette[3], 1, 1, false,   90, 125 + i * 70, 1100, 69, 0);
@@ -441,6 +455,7 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
                     drawLine(90, 194 + i * 70, 1190, 194 + i * 70, uiPalette[2]);
                 }
 
+                // Draw the rows
                 if (icons.size() > row)
                 {
                     drawImage(icons[row].texture, icons[row].size, icons[row].size, false, 105, 126 + i * 70, 64, 64, 0);
@@ -450,7 +465,6 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
                 {
                     drawString(items[row], 105, 140 + i * 70, 38, false, uiPalette[1]);
                 }
-
                 if (values.size() > row && *values[row].value < (int)values[row].names.size())
                     drawString(values[row].names[*values[row].value], 1175, 143 + i * 70, 32, true, uiPalette[5]);
             }
