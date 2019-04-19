@@ -342,7 +342,7 @@ void refreshDisplay()
     eglSwapBuffers(display, surface);
 }
 
-u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> icons, vector<string> items, vector<Value> values, int *selection)
+u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> icons, vector<string> items, vector<string> subitems, int *selection)
 {
     string buttons;
     if (actionPlus != "")
@@ -465,8 +465,8 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
                 {
                     drawString(items[row], 105, 140 + i * 70, 38, false, uiPalette[1]);
                 }
-                if (values.size() > row && *values[row].value < (int)values[row].names.size())
-                    drawString(values[row].names[*values[row].value], 1175, 143 + i * 70, 32, true, uiPalette[5]);
+                if (subitems.size() > row)
+                    drawString(subitems[row], 1175, 143 + i * 70, 32, true, uiPalette[5]);
             }
         }
 

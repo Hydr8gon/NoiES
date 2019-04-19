@@ -29,7 +29,24 @@
 bool running = true;
 bool requestSave, requestLoad;
 
-const u32 defaultKeyMap[] = { KEY_A, KEY_B, KEY_SELECT, KEY_START, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L, KEY_R, KEY_TOUCH };
+u32 keyMap[] = { KEY_A, KEY_B, KEY_SELECT, KEY_START, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L, KEY_R, KEY_TOUCH };
+string romPath = "sdmc:/3ds/noies/game.nes";
+
+const vector<config::Setting> platformSettings =
+{
+    { "keyA",      &keyMap[0],  false },
+    { "keyB",      &keyMap[1],  false },
+    { "keySelect", &keyMap[2],  false },
+    { "keyStart",  &keyMap[3],  false },
+    { "keyUp",     &keyMap[4],  false },
+    { "keyDown",   &keyMap[5],  false },
+    { "keyLeft",   &keyMap[6],  false },
+    { "keyRight",  &keyMap[7],  false },
+    { "keySave",   &keyMap[8],  false },
+    { "keyLoad",   &keyMap[9],  false },
+    { "keyExit",   &keyMap[10], false },
+    { "romPath",   &romPath,    true  }
+};
 
 void runCore(void *args)
 {
@@ -57,16 +74,11 @@ int main(int argc, char **argv)
     u8 *framebuffer = gfxGetFramebuffer(GFX_TOP, GFX_LEFT, NULL, NULL);
     consoleInit(GFX_BOTTOM, NULL);
 
-    config::load();
+    config::load(platformSettings);
 
-    if (config::lastPath == "")
-        config::lastPath = "sdmc:/3ds/noies/game.nes";
-    else if (config::lastPath[config::lastPath.size() - 1] == '\n')
-        config::lastPath = config::lastPath.substr(0, config::lastPath.size() - 1);
-
-    if (core::loadRom(config::lastPath) != 0)
+    if (core::loadRom(romPath) != 0)
     {
-        printf("The current ROM path is: %s\n", config::lastPath.c_str());
+        printf("The current ROM path is: %s\n", romPath.c_str());
         printf("Press any button to exit.\n");
         u32 pressed;
         while (!pressed)
@@ -123,17 +135,17 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < 8; i++)
         {
-            if (pressed & ((config::keyMap[i] == 0) ? defaultKeyMap[i] : BIT(config::keyMap[i] - 1)))
+            if (pressed & keyMap[i])
                 core::pressKey(i);
-            else if (released & ((config::keyMap[i] == 0) ? defaultKeyMap[i] : BIT(config::keyMap[i] - 1)))
+            else if (released & keyMap[i])
                 core::releaseKey(i);
         }
 
-        if (pressed & defaultKeyMap[8]) // Save state
+        if (pressed & keyMap[8]) // Save state
             requestSave = true;
-        else if (pressed & defaultKeyMap[9]) // Load state
+        else if (pressed & keyMap[9]) // Load state
             requestLoad = true;
-        else if (pressed & defaultKeyMap[10]) // Exit
+        else if (pressed & keyMap[10]) // Exit
             break;
 
         if (waveBuffers[currentBuf].status == NDSP_WBUF_DONE)

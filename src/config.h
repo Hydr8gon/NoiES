@@ -21,18 +21,24 @@
 #define CONFIG_H
 
 #include <string>
+#include <vector>
+
+using namespace std;
 
 namespace config
 {
 
-extern int disableSpriteLimit;
-extern int screenFiltering;
-extern int frameLimiter;
-extern int keyMap[8];
+typedef struct
+{
+    string name;
+    void *value;
+    bool isString;
+} Setting;
 
-extern std::string lastPath;
+extern uint32_t disableSpriteLimit;
+extern uint32_t frameLimiter;
 
-void load();
+void load(vector<Setting> platformSettings);
 void save();
 
 }

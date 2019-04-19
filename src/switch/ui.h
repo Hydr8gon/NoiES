@@ -32,12 +32,6 @@ typedef struct
     int size;
 } Icon;
 
-typedef struct
-{
-    vector<string> names;
-    int *value;
-} Value;
-
 extern ColorSetId systemTheme;
 extern u32 *fileIcon;
 extern u32 *folderIcon;
@@ -54,7 +48,7 @@ void setTextureFiltering(bool enabled);
 void clearDisplay(u8 color);
 void refreshDisplay();
 
-u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> icons, vector<string> items, vector<Value> values, int *selection);
+u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> icons, vector<string> items, vector<string> subitems, int *selection);
 u32 messageScreen(string title, vector<string> text, bool exit);
 
 void setupAudioBuffer();

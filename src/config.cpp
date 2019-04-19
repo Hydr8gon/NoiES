@@ -21,41 +21,25 @@
 #include <string>
 #include <vector>
 
-#include "core.h"
+#include "config.h"
 
 namespace config
 {
 
-int disableSpriteLimit = 0;
-int screenFiltering    = 0;
-int frameLimiter       = 1;
-int keyMap[8];
+uint32_t disableSpriteLimit = 0;
+uint32_t frameLimiter = 1;
 
-string lastPath;
-
-typedef struct
+vector<Setting> settings =
 {
-    string name;
-    int *value;
-} Setting;
-
-const vector<Setting> settings =
-{
-    { "disableSpriteLimit", &disableSpriteLimit },
-    { "screenFiltering",    &screenFiltering    },
-    { "frameLimiter",       &frameLimiter       },
-    { "keyA",               &keyMap[0]          },
-    { "keyB",               &keyMap[1]          },
-    { "keySelect",          &keyMap[2]          },
-    { "keyStart",           &keyMap[3]          },
-    { "keyUp",              &keyMap[4]          },
-    { "keyDown",            &keyMap[5]          },
-    { "keyLeft",            &keyMap[6]          },
-    { "keyRight",           &keyMap[7]          }
+    { "disableSpriteLimit", &disableSpriteLimit, false },
+    { "frameLimiter",       &frameLimiter,       false }
 };
 
-void load()
+void load(vector<Setting> platformSettings)
 {
+    // Include any platform-specific settings
+    settings.insert(settings.end(), platformSettings.begin(), platformSettings.end());
+
     FILE *config = fopen("noies.ini", "r");
     if (!config)
         return;
@@ -67,21 +51,15 @@ void load()
         string line = read;
         for (unsigned int i = 0; i < settings.size(); i++)
         {
-            string name = line.substr(0, line.rfind("="));
+            int split = line.rfind("=");
+            string name = line.substr(0, split);
             if (name == settings[i].name)
             {
-                try
-                {
-                    *settings[i].value = stoi(line.substr(line.rfind("=") + 1));
-                }
-                catch (...)
-                {
-                    // Keep the default value if the config value is invalid
-                }
-            }
-            else if (name == "lastPath")
-            {
-                lastPath = line.substr(line.rfind("=") + 1);
+                string value = line.substr(split + 1, line.size() - split - 2);
+                if (settings[i].isString)
+                    *((string*)settings[i].value) = value;
+                else if (value[0] >= 0x30 && value[0] <= 0x39)
+                    *((uint32_t*)settings[i].value) = stoi(value);
             }
         }
     }
@@ -91,11 +69,19 @@ void load()
 
 void save()
 {
-    // Save all setting names and values to the config file
     FILE *config = fopen("noies.ini", "w");
+
+    // Save all setting names and values to the config file
     for (unsigned int i = 0; i < settings.size(); i++)
-        fputs((settings[i].name + "=" + to_string(*settings[i].value) +"\n").c_str(), config);
-    fputs(("lastPath=" + lastPath).c_str(), config);
+    {
+        string value;
+        if (settings[i].isString)
+            value = *(string*)settings[i].value;
+        else
+            value = to_string(*(uint32_t*)settings[i].value).c_str();
+        fputs((settings[i].name + '=' + value + '\n').c_str(), config);
+    }
+
     fclose(config);
 }
 

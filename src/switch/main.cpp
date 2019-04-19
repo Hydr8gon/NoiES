@@ -24,12 +24,41 @@
 #include "../config.h"
 #include "../mutex.h"
 
+typedef struct
+{
+    vector<string> names;
+    uint32_t *value;
+} SettingValue;
+
 bool paused;
 
 AudioOutBuffer *audioBuffer;
 u32 count;
 
-const u32 defaultKeyMap[] = { KEY_A, KEY_B, KEY_MINUS, KEY_PLUS, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L | KEY_R };
+u32 screenFiltering = 0;
+string lastPath = "sdmc:/";
+
+u32 keyMap[] = {
+    KEY_A, KEY_B, KEY_MINUS, KEY_PLUS,
+    (KEY_DUP   | KEY_LSTICK_UP),   (KEY_DDOWN  | KEY_LSTICK_DOWN),
+    (KEY_DLEFT | KEY_LSTICK_LEFT), (KEY_DRIGHT | KEY_LSTICK_RIGHT),
+    (KEY_L | KEY_R)
+};
+
+const vector<config::Setting> platformSettings =
+{
+    { "screenFiltering", &screenFiltering, false },
+    { "keyA",            &keyMap[0],       false },
+    { "keyB",            &keyMap[1],       false },
+    { "keySelect",       &keyMap[2],       false },
+    { "keyStart",        &keyMap[3],       false },
+    { "keyUp",           &keyMap[4],       false },
+    { "keyDown",         &keyMap[5],       false },
+    { "keyLeft",         &keyMap[6],       false },
+    { "keyRight",        &keyMap[7],       false },
+    { "keyMenu",         &keyMap[8],       false },
+    { "lastPath",        &lastPath,        true  }
+};
 
 const vector<string> controlNames =
 {
@@ -41,12 +70,11 @@ const vector<string> controlNames =
     "D-Pad Down",
     "D-Pad Left",
     "D-Pad Right",
-    "Reset to Defaults"
+    "Pause Menu"
 };
 
-const vector<string> controlValueNames =
+const vector<string> controlValues =
 {
-    "Default",
     "A Button", "B Button", "X Button", "Y Button",
     "Left Stick Click", "Right Stick Click",
     "L Button", "R Button", "ZL Button", "ZR Button",
@@ -56,30 +84,18 @@ const vector<string> controlValueNames =
     "Right Stick Left", "Right Stick Up", "Right Stick Right", "Right Stick Down"
 };
 
-const vector<Value> controlValues =
-{
-    { controlValueNames, &config::keyMap[0] },
-    { controlValueNames, &config::keyMap[1] },
-    { controlValueNames, &config::keyMap[2] },
-    { controlValueNames, &config::keyMap[3] },
-    { controlValueNames, &config::keyMap[4] },
-    { controlValueNames, &config::keyMap[5] },
-    { controlValueNames, &config::keyMap[6] },
-    { controlValueNames, &config::keyMap[7] }
-};
-
 const vector<string> settingNames =
 {
     "Disable Sprite Limit",
-    "Screen Filtering",
-    "Frame Limiter"
+    "Frame Limiter",
+    "Screen Filtering"
 };
 
-const vector<Value> settingValues =
+const vector<SettingValue> settingValues =
 {
     { { "Off", "On" }, &config::disableSpriteLimit },
-    { { "Off", "On" }, &config::screenFiltering    },
-    { { "Off", "On" }, &config::frameLimiter       }
+    { { "Off", "On" }, &config::frameLimiter       },
+    { { "Off", "On" }, &screenFiltering            }
 };
 
 const vector<string> pauseNames =
@@ -119,7 +135,7 @@ void startCore()
     audoutInitialize();
     audoutStartAudioOut();
     setupAudioBuffer();
-    setTextureFiltering(config::screenFiltering);
+    setTextureFiltering(screenFiltering);
     Thread core, audio;
     threadCreate(&core, runCore, NULL, 0x8000, 0x30, 1);
     threadStart(&core);
@@ -141,28 +157,53 @@ void controlsMenu()
 
     while (true)
     {
-        u32 pressed = menuScreen("Controls", "", "", {}, controlNames, controlValues, &selection);
-
-        if (pressed & KEY_A)
+        vector<string> controlSubitems;
+        for (unsigned int i = 0; i < controlNames.size(); i++)
         {
-            if (selection == (int)controlNames.size() - 1) // Reset to defaults
+            if (keyMap[i] == 0)
             {
-                for (unsigned int i = 0; i < controlValues.size(); i++)
-                    *controlValues[i].value = 0;
+                controlSubitems.push_back("None");
             }
             else
             {
-                pressed = messageScreen("Controls", {"Press a button to map it to: " + controlNames[selection]}, false);
-                for (unsigned int i = 0; i < controlValueNames.size(); i++)
+                string subitem;
+                int count = 0;
+                for (unsigned int j = 0; j < controlValues.size(); j++)
                 {
-                    if (pressed & BIT(i))
-                        *controlValues[selection].value = i + 1;
+                    if (keyMap[i] & BIT(j))
+                    {
+                        if (count < 5)
+                        {
+                            subitem += controlValues[j] + ", ";
+                            count++;
+                        }
+                        else
+                        {
+                            subitem += "...";
+                            break;
+                        }
+                    }
                 }
+                controlSubitems.push_back(subitem.substr(0, subitem.size() - ((count == 5) ? 0 : 2)));
             }
+        }
+
+        u32 pressed = menuScreen("Controls", "", "Clear", {}, controlNames, controlSubitems, &selection);
+
+        if (pressed & KEY_A)
+        {
+            pressed = 0;
+            while (pressed == 0 || pressed > KEY_RSTICK_DOWN)
+                pressed = messageScreen("Controls", {"Press a button to add a mapping to: " + controlNames[selection]}, false);
+            keyMap[selection] |= pressed;
         }
         else if (pressed & KEY_B)
         {
             return;
+        }
+        else if (pressed & KEY_X)
+        {
+            keyMap[selection] = 0;
         }
     }
 }
@@ -173,7 +214,11 @@ void settingsMenu()
 
     while (true)
     {
-        u32 pressed = menuScreen("Settings", "", "Controls", {}, settingNames, settingValues, &selection);
+        vector<string> settingSubitems;
+        for (unsigned int i = 0; i < settingNames.size(); i++)
+            settingSubitems.push_back(settingValues[i].names[*settingValues[i].value]);
+
+        u32 pressed = menuScreen("Settings", "", "Controls", {}, settingNames, settingSubitems, &selection);
 
         if (pressed & KEY_A)
         {
@@ -193,7 +238,7 @@ void settingsMenu()
 
 bool fileBrowser()
 {
-    string romPath = (config::lastPath == "") ? "sdmc:/" : config::lastPath;
+    string romPath = lastPath;
     int selection = 0;
 
     while (true)
@@ -231,7 +276,7 @@ bool fileBrowser()
                     return false;
                 }
 
-                config::lastPath = romPath.substr(0, romPath.rfind("/"));
+                lastPath = romPath.substr(0, romPath.rfind("/"));
                 config::save();
                 return true;
             }
@@ -294,7 +339,7 @@ bool pauseMenu()
 int main(int argc, char **argv)
 {
     initRenderer();
-    config::load();
+    config::load(platformSettings);
 
     if (!fileBrowser())
     {
@@ -312,13 +357,13 @@ int main(int argc, char **argv)
 
         for (int i = 0; i < 8; i++)
         {
-            if (pressed & ((config::keyMap[i] == 0) ? defaultKeyMap[i] : BIT(config::keyMap[i] - 1)))
+            if (pressed & keyMap[i])
                 core::pressKey(i);
-            else if (released & ((config::keyMap[i] == 0) ? defaultKeyMap[i] : BIT(config::keyMap[i] - 1)))
+            else if (released & keyMap[i])
                 core::releaseKey(i);
         }
 
-        if (pressed & defaultKeyMap[8])
+        if (pressed & keyMap[8])
         {
             if (!pauseMenu())
                 break;

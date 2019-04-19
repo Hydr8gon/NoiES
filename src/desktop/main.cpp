@@ -22,14 +22,28 @@
 #include "portaudio.h"
 
 #include "../core.h"
-#include "../config.h"
 #include "../ppu.h"
 #include "../apu.h"
+#include "../config.h"
 #include "../mutex.h"
 
 bool requestSave, requestLoad;
 
-const char defaultKeyMap[] = { 'l', 'k', 'g', 'h', 'w', 's', 'a', 'd' };
+uint32_t screenFiltering = 0;
+string keyMap[] = { "l", "k", "g", "h", "w", "s", "a", "d" };
+
+const vector<config::Setting> platformSettings =
+{
+    { "screenFiltering", &screenFiltering, false },
+    { "keyA",            &keyMap[0],       true  },
+    { "keyB",            &keyMap[1],       true  },
+    { "keySelect",       &keyMap[2],       true  },
+    { "keyStart",        &keyMap[3],       true  },
+    { "keyUp",           &keyMap[4],       true  },
+    { "keyDown",         &keyMap[5],       true  },
+    { "keyLeft",         &keyMap[6],       true  },
+    { "keyRight",        &keyMap[7],       true  }
+};
 
 void runCore()
 {
@@ -69,7 +83,7 @@ void keyDown(unsigned char key, int x, int y)
 {
     for (int i = 0; i < 8; i++)
     {
-        if (key == ((config::keyMap[i] == 0) ? defaultKeyMap[i] : config::keyMap[i]))
+        if (key == keyMap[i][0])
             core::pressKey(i);
     }
 }
@@ -78,7 +92,7 @@ void keyUp(unsigned char key, int x, int y)
 {
     for (int i = 0; i < 8; i++)
     {
-        if (key == ((config::keyMap[i] == 0) ? defaultKeyMap[i] : config::keyMap[i]))
+        if (key == keyMap[i][0])
             core::releaseKey(i);
     }
 }
@@ -108,20 +122,15 @@ void onExit()
 
 int main(int argc, char **argv)
 {
-    config::load();
+    config::load(platformSettings);
 
-    if (argc < 2 && config::lastPath == "")
+    if (argc < 2)
     {
         printf("Please specify a ROM to load.\n");
         return 1;
     }
 
-    if (argc < 2)
-        printf("No ROM specified. Loading previous ROM.\n");
-    else
-        config::lastPath = argv[1];
-
-    if (core::loadRom(config::lastPath) != 0)
+    if (core::loadRom(argv[1]) != 0)
         return 1;
 
     glutInit(&argc, argv);
@@ -132,8 +141,8 @@ int main(int argc, char **argv)
     GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, config::screenFiltering ? GL_LINEAR : GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, config::screenFiltering ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, screenFiltering ? GL_LINEAR : GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, screenFiltering ? GL_LINEAR : GL_NEAREST);
 
     PaStream *stream;
     Pa_Initialize();
