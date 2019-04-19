@@ -172,10 +172,10 @@ void controlsMenu()
                 {
                     if (keyMap[i] & BIT(j))
                     {
+                        count++;
                         if (count < 5)
                         {
                             subitem += controlValues[j] + ", ";
-                            count++;
                         }
                         else
                         {
