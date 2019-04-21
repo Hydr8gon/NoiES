@@ -38,7 +38,7 @@ EGLContext context;
 EGLSurface surface;
 GLuint program, vbo, texture;
 
-touchPosition touch;
+bool showSelector = true;
 
 AudioOutBuffer audioBuffers[2];
 s16 *audioData[2];
@@ -356,6 +356,9 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
     bool downHeld = false;
     bool scroll = false;
     chrono::steady_clock::time_point timeHeld;
+    bool touchStarted = false;
+    bool touchCancelled = false;
+    touchPosition touch, touchMove;
 
     setTextureFiltering(true);
 
@@ -374,20 +377,31 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
 
         if (pressed & KEY_UP && position > 0)
         {
-            position--;
+            if (!showSelector)
+                showSelector = true;
+            else
+                position--;
             upHeld = true;
             timeHeld = chrono::steady_clock::now();
         }
         else if (pressed & KEY_DOWN && position < items.size() - 1)
         {
-            position++;
+            if (!showSelector)
+                showSelector = true;
+            else
+                position++;
             downHeld = true;
             timeHeld = chrono::steady_clock::now();
         }
         else if (pressed & (KEY_A | KEY_B) || (actionX != "" && pressed & KEY_X) || (actionPlus != "" && pressed & KEY_PLUS))
         {
-            *selection = position;
-            return pressed;
+            if (!(pressed & KEY_A) || showSelector)
+            {
+                showSelector = true;
+                *selection = position;
+                return pressed;
+            }
+            showSelector = true;
         }
 
         if (released & KEY_UP)
@@ -429,20 +443,59 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
                 else
                     row = i + position - 3;
 
-                // Simulate an A press on a selection if touched
                 if (hidTouchCount() > 0)
                 {
-                    hidTouchRead(&touch, 0);
+                    if (!touchStarted)
+                    {
+                        hidTouchRead(&touch, 0);
+                        touchStarted = true;
+                        touchCancelled = false;
+                        showSelector = false;
+                    }
+                    hidTouchRead(&touchMove, 0);
+
+                    if (touchCancelled)
+                    {
+                        // Scroll with a dragged touch
+                        int newPos = *selection + (int)(touch.py - touchMove.py) / 70;
+                        if (items.size() <= 7)
+                            position = 0;
+                        else if (newPos > (int)items.size() - 4)
+                            position = items.size() - 4;
+                        else if (newPos < 3)
+                            position = 3;
+                        else
+                            position = newPos;
+                    }
+                    else if (touchMove.px > touch.px + 25 || touchMove.px < touch.px - 25 || touchMove.py > touch.py + 25 || touchMove.py < touch.py - 25)
+                    {
+                        // Prepare to scroll with a dragged touch
+                        touchCancelled = true;
+                        if (items.size() <= 7)
+                            *selection = position;
+                        if (position > items.size() - 4)
+                            *selection = items.size() - 4;
+                        else if (position < 3)
+                            *selection = 3;
+                        else
+                            *selection = position;
+                    }
                 }
-                else if (touch.px >= 90 && touch.px < 1190 && touch.py >= 124 + i * 70 && touch.py < 194 + i * 70)
+                else
                 {
-                    touch.px = 0;
-                    *selection = row;
-                    return KEY_A;
+                    touchStarted = false;
+
+                    // Simulate an A press on a selection if touched
+                    if (!touchCancelled && touch.px >= 90 && touch.px < 1190 && touch.py >= 124 + i * 70 && touch.py < 194 + i * 70)
+                    {
+                        touch.px = 0;
+                        *selection = row;
+                        return KEY_A;
+                    }
                 }
 
                 // Draw the selection box and row lines
-                if (row == position)
+                if (row == position && showSelector)
                 {
                     drawImage(&uiPalette[3], 1, 1, false,   90, 125 + i * 70, 1100, 69, 0);
                     drawImage(&uiPalette[4], 1, 1, false,   89, 121 + i * 70, 1103,  5, 0);
