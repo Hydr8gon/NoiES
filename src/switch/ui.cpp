@@ -127,6 +127,14 @@ u32 *bmpToTexture(string filename)
     return tex;
 }
 
+int stringWidth(string str)
+{
+    int width = 0;
+    for (unsigned int i = 0; i < str.size(); i++)
+        width += charWidths[str[i] - 32];
+    return width;
+}
+
 void loadTheme()
 {
     // Get the current system theme
@@ -276,11 +284,7 @@ void drawImage(u32 *image, int imageWidth, int imageHeight, bool reverse, float 
 
 void drawString(string str, float x, float y, int size, bool right, u32 color)
 {
-    // Find the total width of the string texture
-    int width = 0;
-    for (unsigned int i = 0; i < str.size(); i++)
-        width += charWidths[str[i] - 32];
-
+    int width = stringWidth(str);
     u32 *tex = new u32[width * 48];
     int currentX = 0;
 
@@ -344,20 +348,26 @@ void refreshDisplay()
 
 u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> icons, vector<string> items, vector<string> subitems, int *selection)
 {
-    string buttons;
     if (actionPlus != "")
-        buttons += "\x83 " + actionPlus + "     ";
+        actionPlus = "\x83 " + actionPlus + "     ";
     if (actionX != "")
-        buttons += "\x82 " + actionX + "     ";
-    buttons += "\x81 Back     \x80 OK";
+        actionX = "\x82 " + actionX + "     ";
+    string actionB = "\x81 Back     ";
+    string actionA = "\x80 OK";
+
+    unsigned int boundsAB    = 1218 - (stringWidth(actionA) + charWidths[0] * 2.5) * 34 / 48;
+    unsigned int boundsBX    = boundsAB    - stringWidth(actionB)    * 34 / 48;
+    unsigned int boundsXPlus = boundsBX    - stringWidth(actionX)    * 34 / 48;
+    unsigned int boundsPlus  = boundsXPlus - stringWidth(actionPlus) * 34 / 48;
 
     unsigned int position = *selection;
     bool upHeld = false;
     bool downHeld = false;
     bool scroll = false;
     chrono::steady_clock::time_point timeHeld;
+
     bool touchStarted = false;
-    bool touchCancelled = false;
+    bool touchScroll = false;
     touchPosition touch, touchMove;
 
     setTextureFiltering(true);
@@ -369,7 +379,7 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
         drawString(title, 72, 30, 42, false, uiPalette[1]);
         drawLine(30, 88, 1250, 88, uiPalette[1]);
         drawLine(30, 648, 1250, 648, uiPalette[1]);
-        drawString(buttons, 1218, 667, 34, true, uiPalette[1]);
+        drawString(actionPlus + actionX + actionB + actionA, 1218, 667, 34, true, uiPalette[1]);
 
         hidScanInput();
         u32 pressed = hidKeysDown(CONTROLLER_P1_AUTO);
@@ -393,7 +403,7 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
             downHeld = true;
             timeHeld = chrono::steady_clock::now();
         }
-        else if (pressed & (KEY_A | KEY_B) || (actionX != "" && pressed & KEY_X) || (actionPlus != "" && pressed & KEY_PLUS))
+        else if ((pressed & (KEY_A | KEY_B)) || (actionX != "" && (pressed & KEY_X)) || (actionPlus != "" && (pressed & KEY_PLUS)))
         {
             if (!(pressed & KEY_A) || showSelector)
             {
@@ -428,6 +438,59 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
             }
         }
 
+        if (hidTouchCount() > 0)
+        {
+            if (!touchStarted)
+            {
+                hidTouchRead(&touch, 0);
+                touchStarted = true;
+                touchScroll = false;
+                showSelector = false;
+            }
+            hidTouchRead(&touchMove, 0);
+
+            if (touchScroll)
+            {
+                // Scroll with a dragged touch
+                int newPos = *selection + (int)(touch.py - touchMove.py) / 70;
+                if (items.size() <= 7)
+                    position = 0;
+                else if (newPos > (int)items.size() - 4)
+                    position = items.size() - 4;
+                else if (newPos < 3)
+                    position = 3;
+                else
+                    position = newPos;
+             }
+             else if (touchMove.px > touch.px + 25 || touchMove.px < touch.px - 25 || touchMove.py > touch.py + 25 || touchMove.py < touch.py - 25)
+             {
+                 // Prepare to scroll with a dragged touch
+                 touchScroll = true;
+                 if (items.size() <= 7)
+                     *selection = position;
+                 if (position > items.size() - 4)
+                     *selection = items.size() - 4;
+                 else if (position < 3)
+                     *selection = 3;
+                 else
+                     *selection = position;
+            }
+        }
+        else
+        {
+            // Simulate a button press if the button text is touched
+            if (!touchScroll && touch.py >= 650)
+            {
+                if (touch.px >= boundsBX && touch.px < boundsAB)
+                    return KEY_B | KEY_TOUCH;
+                else if (touch.px >= boundsXPlus && touch.px < boundsBX)
+                    return KEY_X | KEY_TOUCH;
+                else if (touch.px >= boundsPlus && touch.px < boundsXPlus)
+                    return KEY_PLUS | KEY_TOUCH;
+            }
+            touchStarted = false;
+        }
+
         if (items.size() > 0)
             drawLine(90, 124, 1190, 124, uiPalette[2]);
 
@@ -443,55 +506,11 @@ u32 menuScreen(string title, string actionPlus, string actionX, vector<Icon> ico
                 else
                     row = i + position - 3;
 
-                if (hidTouchCount() > 0)
+                // Simulate an A press on a selection if its row is touched
+                if (!touchStarted && !touchScroll && touch.px >= 90 && touch.px < 1190 && touch.py >= 124 + i * 70 && touch.py < 194 + i * 70)
                 {
-                    if (!touchStarted)
-                    {
-                        hidTouchRead(&touch, 0);
-                        touchStarted = true;
-                        touchCancelled = false;
-                        showSelector = false;
-                    }
-                    hidTouchRead(&touchMove, 0);
-
-                    if (touchCancelled)
-                    {
-                        // Scroll with a dragged touch
-                        int newPos = *selection + (int)(touch.py - touchMove.py) / 70;
-                        if (items.size() <= 7)
-                            position = 0;
-                        else if (newPos > (int)items.size() - 4)
-                            position = items.size() - 4;
-                        else if (newPos < 3)
-                            position = 3;
-                        else
-                            position = newPos;
-                    }
-                    else if (touchMove.px > touch.px + 25 || touchMove.px < touch.px - 25 || touchMove.py > touch.py + 25 || touchMove.py < touch.py - 25)
-                    {
-                        // Prepare to scroll with a dragged touch
-                        touchCancelled = true;
-                        if (items.size() <= 7)
-                            *selection = position;
-                        if (position > items.size() - 4)
-                            *selection = items.size() - 4;
-                        else if (position < 3)
-                            *selection = 3;
-                        else
-                            *selection = position;
-                    }
-                }
-                else
-                {
-                    touchStarted = false;
-
-                    // Simulate an A press on a selection if touched
-                    if (!touchCancelled && touch.px >= 90 && touch.px < 1190 && touch.py >= 124 + i * 70 && touch.py < 194 + i * 70)
-                    {
-                        touch.px = 0;
-                        *selection = row;
-                        return KEY_A;
-                    }
+                    *selection = row;
+                    return KEY_A | KEY_TOUCH;
                 }
 
                 // Draw the selection box and row lines

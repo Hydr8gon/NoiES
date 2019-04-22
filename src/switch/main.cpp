@@ -201,7 +201,7 @@ void controlsMenu()
         {
             return;
         }
-        else if (pressed & KEY_X)
+        else if ((pressed & KEY_X) && !(pressed & KEY_TOUCH))
         {
             keyMap[selection] = 0;
         }
