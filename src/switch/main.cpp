@@ -31,14 +31,13 @@ typedef struct
 } SettingValue;
 
 bool paused;
-
-AudioOutBuffer *audioBuffer;
-u32 count;
+Thread coreThread, audioThread;
 
 u32 screenFiltering = 0;
 string lastPath = "sdmc:/";
 
-u32 keyMap[] = {
+u32 keyMap[] =
+{
     KEY_A, KEY_B, KEY_MINUS, KEY_PLUS,
     (KEY_DUP   | KEY_LSTICK_UP),   (KEY_DDOWN  | KEY_LSTICK_DOWN),
     (KEY_DLEFT | KEY_LSTICK_LEFT), (KEY_DRIGHT | KEY_LSTICK_RIGHT),
@@ -115,6 +114,9 @@ void runCore(void *args)
 
 void audioOutput(void *args)
 {
+    AudioOutBuffer *audioBuffer;
+    u32 count;
+
     while (!paused)
     {
         audoutWaitPlayFinish(&audioBuffer, &count, U64_MAX);
@@ -136,16 +138,17 @@ void startCore()
     audoutStartAudioOut();
     setupAudioBuffer();
     setTextureFiltering(screenFiltering);
-    Thread core, audio;
-    threadCreate(&core, runCore, NULL, 0x8000, 0x30, 1);
-    threadStart(&core);
-    threadCreate(&audio, audioOutput, NULL, 0x8000, 0x30, 2);
-    threadStart(&audio);
+    threadCreate(&coreThread, runCore, NULL, 0x8000, 0x30, 1);
+    threadStart(&coreThread);
+    threadCreate(&audioThread, audioOutput, NULL, 0x8000, 0x30, 0);
+    threadStart(&audioThread);
 }
 
 void stopCore()
 {
     paused = true;
+    threadWaitForExit(&coreThread);
+    threadWaitForExit(&audioThread);
     audoutStopAudioOut();
     audoutExit();
     appletUnlockExit();
