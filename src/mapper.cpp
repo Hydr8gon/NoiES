@@ -51,7 +51,8 @@ const vector<core::StateItem> stateItems =
 
 bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType)
 {
-    if (mapperType > 4 && mapperType != 7 && mapperType != 9) // Unknown mapper type
+    // Check if the mapper type is supported
+    if (mapperType > 4 && mapperType != 7 && mapperType != 9 && mapperType != 15)
         return false;
 
     vromAddress = numBanks * 0x4000;
@@ -232,16 +233,51 @@ void mmc2(uint16_t address, uint8_t value)
     }
 }
 
+void map15(uint16_t address, uint8_t value)
+{
+    if (address >= 0x8000)
+    {
+        uint8_t bank = value & 0x3F;
+        switch (address & 0x03)
+        {
+            case 0: // Swap the 32 KB bank (if bit 0 is set, acts like 16 KB mode)
+                memcpy(&cpu::memory[0x8000], &rom[0x4000 * bank], 0x4000);
+                memcpy(&cpu::memory[0xC000], &rom[0x4000 * (bank | 0x01)], 0x4000);
+                break;
+
+            case 1: // Swap the first 16 KB bank and fix the last bank to the last of a 128 KB block
+                memcpy(&cpu::memory[0x8000], &rom[0x4000 * bank], 0x4000);
+                memcpy(&cpu::memory[0xC000], &rom[0x4000 * (bank | 0x07)], 0x4000);
+                break;
+
+            case 2: // Swap a single 8 KB bank and mirror it
+                memcpy(&cpu::memory[0x8000], &rom[0x4000 * bank + ((value & 0x80) ? 0x2000 : 0)], 0x2000);
+                for (int i = 0; i < 3; i++)
+                    memcpy(&cpu::memory[0xA000 + i * 0x2000], &cpu::memory[0x8000], 0x2000);
+                break;
+
+            case 3: // Swap a single 16 KB bank and mirror it
+                memcpy(&cpu::memory[0x8000], &rom[0x4000 * bank], 0x4000);
+                memcpy(&cpu::memory[0xC000], &cpu::memory[0x8000], 0x4000);
+                break;
+        }
+
+        // Set mirroring mode
+        ppu::mirrorMode = (value & 0x40) ? 3 : 2;
+    }
+}
+
 void registerWrite(uint16_t address, uint8_t value)
 {
     switch (type)
     {
-        case 1:  mmc1(address, value); break;
-        case 2: unrom(address, value); break;
-        case 3: cnrom(address, value); break;
-        case 4:  mmc3(address, value); break;
-        case 7: axrom(address, value); break;
-        case 9:  mmc2(address, value); break;
+        case  1:  mmc1(address, value); break;
+        case  2: unrom(address, value); break;
+        case  3: cnrom(address, value); break;
+        case  4:  mmc3(address, value); break;
+        case  7: axrom(address, value); break;
+        case  9:  mmc2(address, value); break;
+        case 15: map15(address, value); break;
     }
 }
 
