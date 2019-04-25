@@ -51,7 +51,7 @@ const vector<core::StateItem> stateItems =
 
 bool load(FILE *romFile, uint8_t numBanks, uint8_t mapperType)
 {
-    if (mapperType > 4 && mapperType != 9) // Unknown mapper type
+    if (mapperType > 4 && mapperType != 7 && mapperType != 9) // Unknown mapper type
         return false;
 
     vromAddress = numBanks * 0x4000;
@@ -141,13 +141,15 @@ void mmc1(uint16_t address, uint8_t value)
 void unrom(uint16_t address, uint8_t value)
 {
     // Swap the first 16 KB ROM bank
-    memcpy(&cpu::memory[0x8000], &rom[0x4000 * value], 0x4000);
+    if (address >= 0x8000)
+        memcpy(&cpu::memory[0x8000], &rom[0x4000 * value], 0x4000);
 }
 
 void cnrom(uint16_t address, uint8_t value)
 {
     // Swap the 8 KB VROM bank
-    memcpy(ppu::memory, &rom[vromAddress + 0x2000 * (value & 0x03)], 0x2000);
+    if (address >= 0x8000)
+        memcpy(ppu::memory, &rom[vromAddress + 0x2000 * (value & 0x03)], 0x2000);
 }
 
 void mmc3(uint16_t address, uint8_t value)
@@ -203,6 +205,16 @@ void mmc3(uint16_t address, uint8_t value)
     }
 }
 
+void axrom(uint16_t address, uint8_t value)
+{
+    // Swap the 32 KB ROM bank and select a nametable for 1-screen mirroring
+    if (address >= 0x8000)
+    {
+        memcpy(&cpu::memory[0x8000], &rom[0x8000 * (value & 0x07)], 0x8000);
+        ppu::mirrorMode = (value & 0x10) ? 1 : 0;
+    }
+}
+
 void mmc2(uint16_t address, uint8_t value)
 {
     if (address >= 0xA000 && address < 0xB000) // Swap first 8 KB ROM bank
@@ -228,6 +240,7 @@ void registerWrite(uint16_t address, uint8_t value)
         case 2: unrom(address, value); break;
         case 3: cnrom(address, value); break;
         case 4:  mmc3(address, value); break;
+        case 7: axrom(address, value); break;
         case 9:  mmc2(address, value); break;
     }
 }
