@@ -482,6 +482,141 @@ void st_(uint8_t reg, uint8_t *dst)
     memoryWrite(dst, reg);
 }
 
+void ahx(uint8_t *dst)
+{
+    // Store the bitwise and of the accumulator, the X register and the high byte of the address plus one
+    memoryWrite(dst, accumulator & registerX & (memory[programCounter] + 1));
+}
+
+void alr(uint8_t *src)
+{
+    // Bitwise and and shift right
+    _and(src);
+    lsr(&accumulator);
+}
+
+void anc(uint8_t *src)
+{
+    // Bitwise and and set carry flag
+    _and(src);
+    (accumulator & 0x80) ? se_(0x01) : cl_(0x01); // C
+}
+
+void arr(uint8_t *src)
+{
+    // Bitwise and and rotate right
+    _and(src);
+    ror(&accumulator);
+
+    ((accumulator & 0x40) ^ ((accumulator & 0x20) << 1)) ? se_(0x40) : cl_(0x40); // V
+    (accumulator & 0x40)                                 ? se_(0x01) : cl_(0x01); // C
+}
+
+void axs(uint8_t *src)
+{
+    // Store the bitwise and with the X register minus a value in the X register
+    registerX &= accumulator;
+    uint8_t before = registerX;
+    registerX -= *src;
+
+    (registerX & 0x80)    ? se_(0x80) : cl_(0x80); // N
+    (registerX == 0)      ? se_(0x02) : cl_(0x02); // Z
+    (before >= registerX) ? se_(0x01) : cl_(0x01); // C
+}
+
+void dcp(uint8_t *src)
+{
+    // Decrement and compare
+    de_(src);
+    cp_(accumulator, src);
+}
+
+void isc(uint8_t *src)
+{
+    // Increment and subtract
+    in_(src);
+    sbc(src);
+}
+
+void las(uint8_t *src)
+{
+    // Bitwise and with the stack pointer and load multiple registers
+    uint8_t value = *src & stackPointer;
+    accumulator = value;
+    registerX = value;
+    stackPointer = value;
+
+    (value & 0x80) ? se_(0x80) : cl_(0x80); // N
+    (value == 0)   ? se_(0x02) : cl_(0x02); // Z
+}
+
+void lax(uint8_t *src)
+{
+    // Load the accumulator and the X register
+    ld_(&accumulator, src);
+    ld_(&registerX, src);
+}
+
+void rla(uint8_t *src)
+{
+    // Rotate left and bitwise and
+    rol(src);
+    _and(src);
+}
+
+void rra(uint8_t *src)
+{
+    // Rotate right and add
+    ror(src);
+    adc(src);
+}
+
+void sax(uint8_t *dst)
+{
+    // Bitwise and of the accumulator and the X register
+    memoryWrite(dst, accumulator & registerX);
+}
+
+void shx(uint8_t *dst)
+{
+    // Store the bitwise and of the X register and the high byte of the address plus one
+    memoryWrite(dst, registerX & (memory[programCounter] + 1));
+}
+
+void shy(uint8_t *dst)
+{
+    // Store the bitwise and of the Y register and the high byte of the address plus one
+    memoryWrite(dst, registerY & (memory[programCounter] + 1));
+}
+
+void slo(uint8_t *src)
+{
+    // Shift left and bitwise or
+    asl(src);
+    ora(src);
+}
+
+void sre(uint8_t *src)
+{
+    // Shift right and bitwise exclusive or
+    lsr(src);
+    eor(src);
+}
+
+void tas(uint8_t *dst)
+{
+    // Store the bitwise and of the accumulator, the X register and the high byte of the address plus one
+    stackPointer = (accumulator & registerX);
+    memoryWrite(dst, stackPointer & (memory[programCounter] + 1));
+}
+
+void xaa(uint8_t *src)
+{
+    // Transfer the X register to the accumulator and bitwise and
+    t__(&registerX, &accumulator);
+    _and(src);
+}
+
 void runCycle()
 {
     // Only run on a CPU cycle (3 global cycles)
@@ -517,189 +652,293 @@ void runCycle()
     // Decode opcode
     switch (memory[programCounter])
     {
-        case 0x69: adc(immediate());     targetCycles += 2; break; // ADC immediate
-        case 0x65: adc(zeroPage());      targetCycles += 3; break; // ADC zero page
-        case 0x75: adc(zeroPageX());     targetCycles += 4; break; // ADC zero page X
-        case 0x6D: adc(absolute());      targetCycles += 4; break; // ADC absolute
-        case 0x7D: adc(absoluteX(true)); targetCycles += 4; break; // ADC absolute X
-        case 0x79: adc(absoluteY(true)); targetCycles += 4; break; // ADC absolute Y
-        case 0x61: adc(indirectX());     targetCycles += 6; break; // ADC indirect X
-        case 0x71: adc(indirectY(true)); targetCycles += 5; break; // ADC indirect Y
+        case 0x00: brk();                targetCycles += 7; break; // BRK
+        case 0x04: zeroPage();           targetCycles += 3; break; // NOP d
+        case 0x08: ph_(flags | 0x10);    targetCycles += 3; break; // PHP
+        case 0x0C: absolute();           targetCycles += 4; break; // NOP a
+        case 0x10: b__(!(flags & 0x80)); targetCycles += 2; break; // BPL *+d
+        case 0x14: zeroPageX();          targetCycles += 4; break; // NOP d,x
+        case 0x18: cl_(0x01);            targetCycles += 2; break; // CLC
+        case 0x1C: absoluteX(true);      targetCycles += 4; break; // NOP a,x
 
-        case 0x29: _and(immediate());     targetCycles += 2; break; // AND immediate
-        case 0x25: _and(zeroPage());      targetCycles += 3; break; // AND zero page
-        case 0x35: _and(zeroPageX());     targetCycles += 4; break; // AND zero page X
-        case 0x2D: _and(absolute());      targetCycles += 4; break; // AND absolute
-        case 0x3D: _and(absoluteX(true)); targetCycles += 4; break; // AND absolute X
-        case 0x39: _and(absoluteY(true)); targetCycles += 4; break; // AND absolute Y
-        case 0x21: _and(indirectX());     targetCycles += 6; break; // AND indirect X
-        case 0x31: _and(indirectY(true)); targetCycles += 5; break; // AND indirect Y
+        case 0x01: ora(indirectX());     targetCycles += 6; break; // ORA (d,x)
+        case 0x05: ora(zeroPage());      targetCycles += 3; break; // ORA d
+        case 0x09: ora(immediate());     targetCycles += 2; break; // ORA #i
+        case 0x0D: ora(absolute());      targetCycles += 4; break; // ORA a
+        case 0x11: ora(indirectY(true)); targetCycles += 5; break; // ORA (d),y
+        case 0x15: ora(zeroPageX());     targetCycles += 4; break; // ORA d,x
+        case 0x19: ora(absoluteY(true)); targetCycles += 4; break; // ORA a,y
+        case 0x1D: ora(absoluteX(true)); targetCycles += 4; break; // ORA a,x
 
-        case 0x0A: asl(&accumulator);     targetCycles += 2; break; // ASL accumulator
-        case 0x06: asl(zeroPage());       targetCycles += 5; break; // ASL zero page
-        case 0x16: asl(zeroPageX());      targetCycles += 6; break; // ASL zero page X
-        case 0x0E: asl(absolute());       targetCycles += 6; break; // ASL absolute
-        case 0x1E: asl(absoluteX(false)); targetCycles += 7; break; // ASL absolute X
+        case 0x02: return;                                          // STP
+        case 0x06: asl(zeroPage());       targetCycles += 5; break; // ASL d
+        case 0x0A: asl(&accumulator);     targetCycles += 2; break; // ASL
+        case 0x0E: asl(absolute());       targetCycles += 6; break; // ASL a
+        case 0x12: return;                                          // STP
+        case 0x16: asl(zeroPageX());      targetCycles += 6; break; // ASL d,x
+        case 0x1A:                        targetCycles += 2; break; // NOP
+        case 0x1E: asl(absoluteX(false)); targetCycles += 7; break; // ASL a,x
 
-        case 0x24: bit(zeroPage()); targetCycles += 3; break; // BIT zero page
-        case 0x2C: bit(absolute()); targetCycles += 4; break; // BIT absolute
+        case 0x03: slo(indirectX());      targetCycles += 8; break; // SLO (d,x)
+        case 0x07: slo(zeroPage());       targetCycles += 5; break; // SLO d
+        case 0x0B: anc(immediate());      targetCycles += 2; break; // ANC #i
+        case 0x0F: slo(absolute());       targetCycles += 6; break; // SLO a
+        case 0x13: slo(indirectY(false)); targetCycles += 8; break; // SLO (d),y
+        case 0x17: slo(zeroPageX());      targetCycles += 6; break; // SLO d,x
+        case 0x1B: slo(absoluteY(false)); targetCycles += 7; break; // SLO a,y
+        case 0x1F: slo(absoluteX(false)); targetCycles += 7; break; // SLO a,x
 
-        case 0x10: b__(!(flags & 0x80)); targetCycles += 2; break; // BPL
-        case 0x30: b__( (flags & 0x80)); targetCycles += 2; break; // BMI
-        case 0x50: b__(!(flags & 0x40)); targetCycles += 2; break; // BVC
-        case 0x70: b__( (flags & 0x40)); targetCycles += 2; break; // BVS
-        case 0x90: b__(!(flags & 0x01)); targetCycles += 2; break; // BCC
-        case 0xB0: b__( (flags & 0x01)); targetCycles += 2; break; // BCS
-        case 0xD0: b__(!(flags & 0x02)); targetCycles += 2; break; // BNE
-        case 0xF0: b__( (flags & 0x02)); targetCycles += 2; break; // BEQ
+        case 0x20: jsr(absolute());      targetCycles += 6; break; // JSR a
+        case 0x24: bit(zeroPage());      targetCycles += 3; break; // BIT d
+        case 0x28: pl_(&flags);          targetCycles += 4; break; // PLP
+        case 0x2C: bit(absolute());      targetCycles += 4; break; // BIT a
+        case 0x30: b__( (flags & 0x80)); targetCycles += 2; break; // BMI *+d
+        case 0x34: zeroPageX();          targetCycles += 4; break; // NOP d,x
+        case 0x38: se_(0x01);            targetCycles += 2; break; // SEC
+        case 0x3C: absoluteX(true);      targetCycles += 4; break; // NOP a,x
 
-        case 0x00: brk(); targetCycles += 7; break; // BRK
+        case 0x21: _and(indirectX());     targetCycles += 6; break; // AND (d,x)
+        case 0x25: _and(zeroPage());      targetCycles += 3; break; // AND d
+        case 0x29: _and(immediate());     targetCycles += 2; break; // AND #i
+        case 0x2D: _and(absolute());      targetCycles += 4; break; // AND a
+        case 0x31: _and(indirectY(true)); targetCycles += 5; break; // AND (d),y
+        case 0x35: _and(zeroPageX());     targetCycles += 4; break; // AND d,x
+        case 0x39: _and(absoluteY(true)); targetCycles += 4; break; // AND a,y
+        case 0x3D: _and(absoluteX(true)); targetCycles += 4; break; // AND a,x
 
-        case 0xC9: cp_(accumulator, immediate());     targetCycles += 2; break; // CMP immediate
-        case 0xC5: cp_(accumulator, zeroPage());      targetCycles += 3; break; // CMP zero page
-        case 0xD5: cp_(accumulator, zeroPageX());     targetCycles += 4; break; // CMP zero page X
-        case 0xCD: cp_(accumulator, absolute());      targetCycles += 4; break; // CMP absolute
-        case 0xDD: cp_(accumulator, absoluteX(true)); targetCycles += 4; break; // CMP absolute X
-        case 0xD9: cp_(accumulator, absoluteY(true)); targetCycles += 4; break; // CMP absolute Y
-        case 0xC1: cp_(accumulator, indirectX());     targetCycles += 6; break; // CMP indirect X
-        case 0xD1: cp_(accumulator, indirectY(true)); targetCycles += 5; break; // CMP indirect Y
+        case 0x22: return;                                          // STP
+        case 0x26: rol(zeroPage());       targetCycles += 5; break; // ROL d
+        case 0x2A: rol(&accumulator);     targetCycles += 2; break; // ROL
+        case 0x2E: rol(absolute());       targetCycles += 6; break; // ROL a
+        case 0x32: return;                                          // STP
+        case 0x36: rol(zeroPageX());      targetCycles += 6; break; // ROL d,x
+        case 0x3A:                        targetCycles += 2; break; // NOP
+        case 0x3E: rol(absoluteX(false)); targetCycles += 7; break; // ROL a,x
 
-        case 0xE0: cp_(registerX, immediate()); targetCycles += 2; break; // CPX immediate
-        case 0xE4: cp_(registerX, zeroPage());  targetCycles += 3; break; // CPX zero page
-        case 0xEC: cp_(registerX, absolute());  targetCycles += 4; break; // CPX absolute
+        case 0x23: rla(indirectX());      targetCycles += 8; break; // RLA (d,x)
+        case 0x27: rla(zeroPage());       targetCycles += 5; break; // RLA d
+        case 0x2B: anc(immediate());      targetCycles += 2; break; // ANC #i
+        case 0x2F: rla(absolute());       targetCycles += 6; break; // RLA a
+        case 0x33: rla(indirectY(false)); targetCycles += 8; break; // RLA (d),y
+        case 0x37: rla(zeroPageX());      targetCycles += 6; break; // RLA d,x
+        case 0x3B: rla(absoluteY(false)); targetCycles += 7; break; // RLA a,y
+        case 0x3F: rla(absoluteX(false)); targetCycles += 7; break; // RLA a,x
 
-        case 0xC0: cp_(registerY, immediate()); targetCycles += 2; break; // CPY immediate
-        case 0xC4: cp_(registerY, zeroPage());  targetCycles += 3; break; // CPY zero page
-        case 0xCC: cp_(registerY, absolute());  targetCycles += 4; break; // CPY absolute
+        case 0x40: rti();                targetCycles += 6; break; // RTI
+        case 0x44: zeroPage();           targetCycles += 3; break; // NOP d
+        case 0x48: ph_(accumulator);     targetCycles += 3; break; // PHA
+        case 0x4C: jmp(absolute());      targetCycles += 3; break; // JMP a
+        case 0x50: b__(!(flags & 0x40)); targetCycles += 2; break; // BVC *+d
+        case 0x54: zeroPageX();          targetCycles += 4; break; // NOP d,x
+        case 0x58: cl_(0x04);            targetCycles += 2; break; // CLI
+        case 0x5C: absoluteX(true);      targetCycles += 4; break; // NOP a,x
 
-        case 0xC6: de_(zeroPage());       targetCycles += 5; break; // DEC zero page
-        case 0xD6: de_(zeroPageX());      targetCycles += 6; break; // DEC zero page X
-        case 0xCE: de_(absolute());       targetCycles += 6; break; // DEC absolute
-        case 0xDE: de_(absoluteX(false)); targetCycles += 7; break; // DEC absolute X
-        
-        case 0x49: eor(immediate());     targetCycles += 2; break; // EOR immediate
-        case 0x45: eor(zeroPage());      targetCycles += 3; break; // EOR zero page
-        case 0x55: eor(zeroPageX());     targetCycles += 4; break; // EOR zero page X
-        case 0x4D: eor(absolute());      targetCycles += 4; break; // EOR absolute
-        case 0x5D: eor(absoluteX(true)); targetCycles += 4; break; // EOR absolute X
-        case 0x59: eor(absoluteY(true)); targetCycles += 4; break; // EOR absolute Y
-        case 0x41: eor(indirectX());     targetCycles += 6; break; // EOR indirect X
-        case 0x51: eor(indirectY(true)); targetCycles += 5; break; // EOR indirect Y
+        case 0x41: eor(indirectX());     targetCycles += 6; break; // EOR (d,x)
+        case 0x45: eor(zeroPage());      targetCycles += 3; break; // EOR d
+        case 0x49: eor(immediate());     targetCycles += 2; break; // EOR #i
+        case 0x4D: eor(absolute());      targetCycles += 4; break; // EOR a
+        case 0x51: eor(indirectY(true)); targetCycles += 5; break; // EOR (d),y
+        case 0x55: eor(zeroPageX());     targetCycles += 4; break; // EOR d,x
+        case 0x59: eor(absoluteY(true)); targetCycles += 4; break; // EOR a,y
+        case 0x5D: eor(absoluteX(true)); targetCycles += 4; break; // EOR a,x
 
-        case 0x18: cl_(0x01); targetCycles += 2; break; // CLC
-        case 0x38: se_(0x01); targetCycles += 2; break; // SEC
-        case 0x58: cl_(0x04); targetCycles += 2; break; // CLI
-        case 0x78: se_(0x04); targetCycles += 2; break; // SEI
-        case 0xB8: cl_(0x40); targetCycles += 2; break; // CLV
-        case 0xD8: cl_(0x08); targetCycles += 2; break; // CLD
-        case 0xF8: se_(0x08); targetCycles += 2; break; // SED
+        case 0x42: return;                                          // STP
+        case 0x46: lsr(zeroPage());       targetCycles += 5; break; // LSR d
+        case 0x4A: lsr(&accumulator);     targetCycles += 2; break; // LSR
+        case 0x4E: lsr(absolute());       targetCycles += 6; break; // LSR a
+        case 0x52: return;                                          // STP
+        case 0x56: lsr(zeroPageX());      targetCycles += 6; break; // LSR d,x
+        case 0x5A:                        targetCycles += 2; break; // NOP
+        case 0x5E: lsr(absoluteX(false)); targetCycles += 7; break; // LSR a,x
 
-        case 0xE6: in_(zeroPage());       targetCycles += 5; break; // INC zero page
-        case 0xF6: in_(zeroPageX());      targetCycles += 6; break; // INC zero page X
-        case 0xEE: in_(absolute());       targetCycles += 6; break; // INC absolute
-        case 0xFE: in_(absoluteX(false)); targetCycles += 7; break; // INC absolute X
+        case 0x43: sre(indirectX());      targetCycles += 8; break; // SRE (d,x)
+        case 0x47: sre(zeroPage());       targetCycles += 5; break; // SRE d
+        case 0x4B: alr(immediate());      targetCycles += 2; break; // ALR #i
+        case 0x4F: sre(absolute());       targetCycles += 6; break; // SRE a
+        case 0x53: sre(indirectY(false)); targetCycles += 8; break; // SRE (d),y
+        case 0x57: sre(zeroPageX());      targetCycles += 6; break; // SRE d,x
+        case 0x5B: sre(absoluteY(false)); targetCycles += 7; break; // SRE a,y
+        case 0x5F: sre(absoluteX(false)); targetCycles += 7; break; // SRE a,x
 
-        case 0x4C: jmp(absolute()); targetCycles += 3; break; // JMP absolute
-        case 0x6C: jmp(indirect()); targetCycles += 5; break; // JMP indirect
+        case 0x60: rts();                targetCycles += 6; break; // RTS
+        case 0x64: zeroPage();           targetCycles += 3; break; // NOP d
+        case 0x68: pl_(&accumulator);    targetCycles += 4; break; // PLA
+        case 0x6C: jmp(indirect());      targetCycles += 5; break; // JMP (a)
+        case 0x70: b__( (flags & 0x40)); targetCycles += 2; break; // BVS *+d
+        case 0x74: zeroPageX();          targetCycles += 4; break; // NOP d,x
+        case 0x78: se_(0x04);            targetCycles += 2; break; // SEI
+        case 0x7C: absoluteX(true);      targetCycles += 4; break; // NOP a,x
 
-        case 0x20: jsr(absolute()); targetCycles += 6; break; // JSR absolute
+        case 0x61: adc(indirectX());     targetCycles += 6; break; // ADC (d,x)
+        case 0x65: adc(zeroPage());      targetCycles += 3; break; // ADC d
+        case 0x69: adc(immediate());     targetCycles += 2; break; // ADC #i
+        case 0x6D: adc(absolute());      targetCycles += 4; break; // ADC a
+        case 0x71: adc(indirectY(true)); targetCycles += 5; break; // ADC (d),y
+        case 0x75: adc(zeroPageX());     targetCycles += 4; break; // ADC d,x
+        case 0x79: adc(absoluteY(true)); targetCycles += 4; break; // ADC a,y
+        case 0x7D: adc(absoluteX(true)); targetCycles += 4; break; // ADC a,x
 
-        case 0xA9: ld_(&accumulator, immediate());     targetCycles += 2; break; // LDA immediate
-        case 0xA5: ld_(&accumulator, zeroPage());      targetCycles += 3; break; // LDA zero page
-        case 0xB5: ld_(&accumulator, zeroPageX());     targetCycles += 4; break; // LDA zero page X
-        case 0xAD: ld_(&accumulator, absolute());      targetCycles += 4; break; // LDA absolute
-        case 0xBD: ld_(&accumulator, absoluteX(true)); targetCycles += 4; break; // LDA absolute X
-        case 0xB9: ld_(&accumulator, absoluteY(true)); targetCycles += 4; break; // LDA absolute Y
-        case 0xA1: ld_(&accumulator, indirectX());     targetCycles += 6; break; // LDA indirect X
-        case 0xB1: ld_(&accumulator, indirectY(true)); targetCycles += 5; break; // LDA indirect Y
+        case 0x62: return;                                          // STP
+        case 0x66: ror(zeroPage());       targetCycles += 5; break; // ROR d
+        case 0x6A: ror(&accumulator);     targetCycles += 2; break; // ROR
+        case 0x6E: ror(absolute());       targetCycles += 6; break; // ROR a
+        case 0x72: return;                                          // STP
+        case 0x76: ror(zeroPageX());      targetCycles += 6; break; // ROR d,x
+        case 0x7A:                        targetCycles += 2; break; // NOP
+        case 0x7E: ror(absoluteX(false)); targetCycles += 7; break; // ROR a,x
 
-        case 0xA2: ld_(&registerX, immediate());     targetCycles += 2; break; // LDX immediate
-        case 0xA6: ld_(&registerX, zeroPage());      targetCycles += 3; break; // LDX zero page
-        case 0xB6: ld_(&registerX, zeroPageY());     targetCycles += 4; break; // LDX zero page Y
-        case 0xAE: ld_(&registerX, absolute());      targetCycles += 4; break; // LDX absolute
-        case 0xBE: ld_(&registerX, absoluteY(true)); targetCycles += 4; break; // LDX absolute Y
+        case 0x63: rra(indirectX());      targetCycles += 8; break; // RRA (d,x)
+        case 0x67: rra(zeroPage());       targetCycles += 5; break; // RRA d
+        case 0x6B: arr(immediate());      targetCycles += 2; break; // ARR #i
+        case 0x6F: rra(absolute());       targetCycles += 6; break; // RRA a
+        case 0x73: rra(indirectY(false)); targetCycles += 8; break; // RRA (d),y
+        case 0x77: rra(zeroPageX());      targetCycles += 6; break; // RRA d,x
+        case 0x7B: rra(absoluteY(false)); targetCycles += 7; break; // RRA a,y
+        case 0x7F: rra(absoluteX(false)); targetCycles += 7; break; // RRA a,x
 
-        case 0xA0: ld_(&registerY, immediate());     targetCycles += 2; break; // LDY immediate
-        case 0xA4: ld_(&registerY, zeroPage());      targetCycles += 3; break; // LDY zero page
-        case 0xB4: ld_(&registerY, zeroPageX());     targetCycles += 4; break; // LDY zero page X
-        case 0xAC: ld_(&registerY, absolute());      targetCycles += 4; break; // LDY absolute
-        case 0xBC: ld_(&registerY, absoluteX(true)); targetCycles += 4; break; // LDY absolute X
-
-        case 0x4A: lsr(&accumulator);     targetCycles += 2; break; // LSR accumulator
-        case 0x46: lsr(zeroPage());       targetCycles += 5; break; // LSR zero page
-        case 0x56: lsr(zeroPageX());      targetCycles += 6; break; // LSR zero page X
-        case 0x4E: lsr(absolute());       targetCycles += 6; break; // LSR absolute
-        case 0x5E: lsr(absoluteX(false)); targetCycles += 7; break; // LSR absolute X
-
-        case 0xEA: targetCycles += 2; break; // NOP
-
-        case 0x09: ora(immediate());     targetCycles += 2; break; // ORA immediate
-        case 0x05: ora(zeroPage());      targetCycles += 3; break; // ORA zero page
-        case 0x15: ora(zeroPageX());     targetCycles += 4; break; // ORA zero page X
-        case 0x0D: ora(absolute());      targetCycles += 4; break; // ORA absolute
-        case 0x1D: ora(absoluteX(true)); targetCycles += 4; break; // ORA absolute X
-        case 0x19: ora(absoluteY(true)); targetCycles += 4; break; // ORA absolute Y
-        case 0x01: ora(indirectX());     targetCycles += 6; break; // ORA indirect X
-        case 0x11: ora(indirectY(true)); targetCycles += 5; break; // ORA indirect Y
-
-        case 0xAA: t__(&accumulator, &registerX); targetCycles += 2; break; // TAX
-        case 0x8A: t__(&registerX, &accumulator); targetCycles += 2; break; // TXA
-        case 0xCA: de_(&registerX);               targetCycles += 2; break; // DEX
-        case 0xE8: in_(&registerX);               targetCycles += 2; break; // INX
-        case 0xA8: t__(&accumulator, &registerY); targetCycles += 2; break; // TAY
-        case 0x98: t__(&registerY, &accumulator); targetCycles += 2; break; // TYA
+        case 0x80: immediate();                   targetCycles += 2; break; // NOP #i
+        case 0x84: st_(registerY, zeroPage());    targetCycles += 3; break; // STY d
         case 0x88: de_(&registerY);               targetCycles += 2; break; // DEY
-        case 0xC8: in_(&registerY);               targetCycles += 2; break; // INY
+        case 0x8C: st_(registerY, absolute());    targetCycles += 4; break; // STY a
+        case 0x90: b__(!(flags & 0x01));          targetCycles += 2; break; // BCC *+d
+        case 0x94: st_(registerY, zeroPageX());   targetCycles += 4; break; // STY d,x
+        case 0x98: t__(&registerY, &accumulator); targetCycles += 2; break; // TYA
+        case 0x9C: shy(absoluteX(false));         targetCycles += 5; break; // SHY a,x
 
-        case 0x2A: rol(&accumulator);     targetCycles += 2; break; // ROL accumulator
-        case 0x26: rol(zeroPage());       targetCycles += 5; break; // ROL zero page
-        case 0x36: rol(zeroPageX());      targetCycles += 6; break; // ROL zero page X
-        case 0x2E: rol(absolute());       targetCycles += 6; break; // ROL absolute
-        case 0x3E: rol(absoluteX(false)); targetCycles += 7; break; // ROL absolute X
+        case 0x81: st_(accumulator, indirectX());      targetCycles += 6; break; // STA (d,x)
+        case 0x85: st_(accumulator, zeroPage());       targetCycles += 3; break; // STA d
+        case 0x89: immediate();                        targetCycles += 2; break; // NOP #i
+        case 0x8D: st_(accumulator, absolute());       targetCycles += 4; break; // STA a
+        case 0x91: st_(accumulator, indirectY(false)); targetCycles += 6; break; // STA (d),y
+        case 0x95: st_(accumulator, zeroPageX());      targetCycles += 4; break; // STA d,x
+        case 0x99: st_(accumulator, absoluteY(false)); targetCycles += 5; break; // STA a,y
+        case 0x9D: st_(accumulator, absoluteX(false)); targetCycles += 5; break; // STA a,x
 
-        case 0x6A: ror(&accumulator);     targetCycles += 2; break; // ROR accumulator
-        case 0x66: ror(zeroPage());       targetCycles += 5; break; // ROR zero page
-        case 0x76: ror(zeroPageX());      targetCycles += 6; break; // ROR zero page X
-        case 0x6E: ror(absolute());       targetCycles += 6; break; // ROR absolute
-        case 0x7E: ror(absoluteX(false)); targetCycles += 7; break; // ROR absolute X
-
-        case 0x40: rti(); targetCycles += 6; break; // RTI
-
-        case 0x60: rts(); targetCycles += 6; break; // RTS
-
-        case 0xE9: sbc(immediate());     targetCycles += 2; break; // SBC immediate
-        case 0xE5: sbc(zeroPage());      targetCycles += 3; break; // SBC zero page
-        case 0xF5: sbc(zeroPageX());     targetCycles += 4; break; // SBC zero page X
-        case 0xED: sbc(absolute());      targetCycles += 4; break; // SBC absolute
-        case 0xFD: sbc(absoluteX(true)); targetCycles += 4; break; // SBC absolute X
-        case 0xF9: sbc(absoluteY(true)); targetCycles += 4; break; // SBC absolute Y
-        case 0xE1: sbc(indirectX());     targetCycles += 6; break; // SBC indirect X
-        case 0xF1: sbc(indirectY(true)); targetCycles += 5; break; // SBC indirect Y
-
-        case 0x85: st_(accumulator, zeroPage());       targetCycles += 3; break; // STA zero page
-        case 0x95: st_(accumulator, zeroPageX());      targetCycles += 4; break; // STA zero page X
-        case 0x8D: st_(accumulator, absolute());       targetCycles += 4; break; // STA absolute
-        case 0x9D: st_(accumulator, absoluteX(false)); targetCycles += 5; break; // STA absolute X
-        case 0x99: st_(accumulator, absoluteY(false)); targetCycles += 5; break; // STA absolute Y
-        case 0x81: st_(accumulator, indirectX());      targetCycles += 6; break; // STA indirect X
-        case 0x91: st_(accumulator, indirectY(false)); targetCycles += 6; break; // STA indirect Y
-
+        case 0x82: immediate();                    targetCycles += 2; break; // NOP #i
+        case 0x86: st_(registerX, zeroPage());     targetCycles += 3; break; // STX d
+        case 0x8A: t__(&registerX, &accumulator);  targetCycles += 2; break; // TXA
+        case 0x8E: st_(registerX, absolute());     targetCycles += 4; break; // STX a
+        case 0x92: return;                                                   // STP
+        case 0x96: st_(registerX, zeroPageY());    targetCycles += 4; break; // STX d,y
         case 0x9A: t__(&registerX, &stackPointer); targetCycles += 2; break; // TXS
-        case 0xBA: t__(&stackPointer, &registerX); targetCycles += 2; break; // TSX
-        case 0x48: ph_(accumulator);               targetCycles += 3; break; // PHA
-        case 0x68: pl_(&accumulator);              targetCycles += 4; break; // PLA
-        case 0x08: ph_(flags | 0x10);              targetCycles += 3; break; // PHP
-        case 0x28: pl_(&flags);                    targetCycles += 4; break; // PLP
+        case 0x9E: shx(absoluteY(false));          targetCycles += 5; break; // SHX a,y
 
-        case 0x86: st_(registerX, zeroPage());  targetCycles += 3; break; // STX zero page
-        case 0x96: st_(registerX, zeroPageY()); targetCycles += 4; break; // STX zero page Y
-        case 0x8E: st_(registerX, absolute());  targetCycles += 4; break; // STX absolute
+        case 0x83: sax(indirectX());      targetCycles += 6; break; // SAX (d,x)
+        case 0x87: sax(zeroPage());       targetCycles += 3; break; // SAX d
+        case 0x8B: xaa(immediate());      targetCycles += 2; break; // XAA #i
+        case 0x8F: sax(absolute());       targetCycles += 4; break; // SAX a
+        case 0x93: ahx(indirectY(false)); targetCycles += 6; break; // AHX (d),y
+        case 0x97: sax(zeroPageY());      targetCycles += 4; break; // SAX d,y
+        case 0x9B: tas(absoluteY(false)); targetCycles += 5; break; // TAS a,y
+        case 0x9F: ahx(absoluteY(false)); targetCycles += 5; break; // AHX a,y
 
-        case 0x84: st_(registerY, zeroPage());  targetCycles += 3; break; // STY zero page
-        case 0x94: st_(registerY, zeroPageX()); targetCycles += 4; break; // STY zero page X
-        case 0x8C: st_(registerY, absolute());  targetCycles += 4; break; // STY absolute
+        case 0xA0: ld_(&registerY, immediate());     targetCycles += 2; break; // LDY #i
+        case 0xA4: ld_(&registerY, zeroPage());      targetCycles += 3; break; // LDY d
+        case 0xA8: t__(&accumulator, &registerY); targetCycles += 2; break; // TAY
+        case 0xAC: ld_(&registerY, absolute());      targetCycles += 4; break; // LDY a
+        case 0xB0: b__( (flags & 0x01)); targetCycles += 2; break; // BCS *+d
+        case 0xB4: ld_(&registerY, zeroPageX());     targetCycles += 4; break; // LDY d,x
+        case 0xBC: ld_(&registerY, absoluteX(true)); targetCycles += 4; break; // LDY a,x
+        case 0xB8: cl_(0x40); targetCycles += 2; break; // CLV
 
-        default: printf("Unknown opcode: 0x%X\n", memory[programCounter]); break;
+        case 0xA1: ld_(&accumulator, indirectX());     targetCycles += 6; break; // LDA (d,x)
+        case 0xA5: ld_(&accumulator, zeroPage());      targetCycles += 3; break; // LDA d
+        case 0xA9: ld_(&accumulator, immediate());     targetCycles += 2; break; // LDA #i
+        case 0xAD: ld_(&accumulator, absolute());      targetCycles += 4; break; // LDA a
+        case 0xB1: ld_(&accumulator, indirectY(true)); targetCycles += 5; break; // LDA (d),y
+        case 0xB5: ld_(&accumulator, zeroPageX());     targetCycles += 4; break; // LDA d,x
+        case 0xB9: ld_(&accumulator, absoluteY(true)); targetCycles += 4; break; // LDA a,y
+        case 0xBD: ld_(&accumulator, absoluteX(true)); targetCycles += 4; break; // LDA a,x
+
+        case 0xA2: ld_(&registerX, immediate());     targetCycles += 2; break; // LDX #i
+        case 0xA6: ld_(&registerX, zeroPage());      targetCycles += 3; break; // LDX d
+        case 0xAA: t__(&accumulator, &registerX);    targetCycles += 2; break; // TAX
+        case 0xAE: ld_(&registerX, absolute());      targetCycles += 4; break; // LDX a
+        case 0xB2: return;                                                     // STP
+        case 0xBA: t__(&stackPointer, &registerX);   targetCycles += 2; break; // TSX
+        case 0xB6: ld_(&registerX, zeroPageY());     targetCycles += 4; break; // LDX d,y
+        case 0xBE: ld_(&registerX, absoluteY(true)); targetCycles += 4; break; // LDX a,y
+
+        case 0xA3: lax(indirectX());     targetCycles += 6; break; // LAX (d,x)
+        case 0xA7: lax(zeroPage());      targetCycles += 3; break; // LAX d
+        case 0xAB: lax(immediate());     targetCycles += 2; break; // LAX #i
+        case 0xAF: lax(absolute());      targetCycles += 4; break; // LAX a
+        case 0xB3: lax(indirectY(true)); targetCycles += 5; break; // LAX (d),y
+        case 0xB7: lax(zeroPageY());     targetCycles += 4; break; // LAX d,y
+        case 0xBB: las(absoluteY(true)); targetCycles += 4; break; // LAS a,y
+        case 0xBF: lax(absoluteY(true)); targetCycles += 4; break; // LAX a,y
+
+        case 0xC0: cp_(registerY, immediate()); targetCycles += 2; break; // CPY #i
+        case 0xC4: cp_(registerY, zeroPage());  targetCycles += 3; break; // CPY d
+        case 0xC8: in_(&registerY);             targetCycles += 2; break; // INY
+        case 0xCC: cp_(registerY, absolute());  targetCycles += 4; break; // CPY a
+        case 0xD0: b__(!(flags & 0x02));        targetCycles += 2; break; // BNE *+d
+        case 0xD4: zeroPageX();                 targetCycles += 4; break; // NOP d,x
+        case 0xD8: cl_(0x08);                   targetCycles += 2; break; // CLD
+        case 0xDC: absoluteX(true);             targetCycles += 4; break; // NOP a,x
+
+        case 0xC1: cp_(accumulator, indirectX());     targetCycles += 6; break; // CMP (d,x)
+        case 0xC5: cp_(accumulator, zeroPage());      targetCycles += 3; break; // CMP d
+        case 0xC9: cp_(accumulator, immediate());     targetCycles += 2; break; // CMP #i
+        case 0xCD: cp_(accumulator, absolute());      targetCycles += 4; break; // CMP a
+        case 0xD1: cp_(accumulator, indirectY(true)); targetCycles += 5; break; // CMP (d),y
+        case 0xD5: cp_(accumulator, zeroPageX());     targetCycles += 4; break; // CMP d,x
+        case 0xD9: cp_(accumulator, absoluteY(true)); targetCycles += 4; break; // CMP a,y
+        case 0xDD: cp_(accumulator, absoluteX(true)); targetCycles += 4; break; // CMP a,x
+
+        case 0xC2: immediate();           targetCycles += 2; break; // NOP #i
+        case 0xC6: de_(zeroPage());       targetCycles += 5; break; // DEC d
+        case 0xCA: de_(&registerX);       targetCycles += 2; break; // DEX
+        case 0xCE: de_(absolute());       targetCycles += 6; break; // DEC a
+        case 0xD2: return;                                          // STP
+        case 0xD6: de_(zeroPageX());      targetCycles += 6; break; // DEC d,x
+        case 0xDA:                        targetCycles += 2; break; // NOP
+        case 0xDE: de_(absoluteX(false)); targetCycles += 7; break; // DEC a,x
+
+        case 0xC3: dcp(indirectX());      targetCycles += 8; break; // DCP (d,x)
+        case 0xC7: dcp(zeroPage());       targetCycles += 5; break; // DCP d
+        case 0xCB: axs(immediate());      targetCycles += 2; break; // AXS #i
+        case 0xCF: dcp(absolute());       targetCycles += 6; break; // DCP a
+        case 0xD3: dcp(indirectY(false)); targetCycles += 8; break; // DCP (d),y
+        case 0xD7: dcp(zeroPageX());      targetCycles += 6; break; // DCP d,x
+        case 0xDB: dcp(absoluteY(false)); targetCycles += 7; break; // DCP a,y
+        case 0xDF: dcp(absoluteX(false)); targetCycles += 7; break; // DCP a,x
+
+        case 0xE0: cp_(registerX, immediate()); targetCycles += 2; break; // CPX #i
+        case 0xE4: cp_(registerX, zeroPage());  targetCycles += 3; break; // CPX d
+        case 0xE8: in_(&registerX);             targetCycles += 2; break; // INX
+        case 0xEC: cp_(registerX, absolute());  targetCycles += 4; break; // CPX a
+        case 0xF0: b__( (flags & 0x02));        targetCycles += 2; break; // BEQ *+d
+        case 0xF4: zeroPageX();                 targetCycles += 4; break; // NOP d,x
+        case 0xF8: se_(0x08);                   targetCycles += 2; break; // SED
+        case 0xFC: absoluteX(true);             targetCycles += 4; break; // NOP a,x
+
+        case 0xE1: sbc(indirectX());     targetCycles += 6; break; // SBC (d,x)
+        case 0xE5: sbc(zeroPage());      targetCycles += 3; break; // SBC d
+        case 0xE9: sbc(immediate());     targetCycles += 2; break; // SBC #i
+        case 0xED: sbc(absolute());      targetCycles += 4; break; // SBC a
+        case 0xF1: sbc(indirectY(true)); targetCycles += 5; break; // SBC (d),y
+        case 0xF5: sbc(zeroPageX());     targetCycles += 4; break; // SBC d,x
+        case 0xF9: sbc(absoluteY(true)); targetCycles += 4; break; // SBC a,y
+        case 0xFD: sbc(absoluteX(true)); targetCycles += 4; break; // SBC a,x
+
+        case 0xE2: immediate();           targetCycles += 2; break; // NOP #i
+        case 0xE6: in_(zeroPage());       targetCycles += 5; break; // INC d
+        case 0xEA:                        targetCycles += 2; break; // NOP
+        case 0xEE: in_(absolute());       targetCycles += 6; break; // INC a
+        case 0xF2: return;                                          // STP
+        case 0xF6: in_(zeroPageX());      targetCycles += 6; break; // INC d,x
+        case 0xFA:                        targetCycles += 2; break; // NOP
+        case 0xFE: in_(absoluteX(false)); targetCycles += 7; break; // INC a,x
+
+        case 0xE3: isc(indirectX());      targetCycles += 8; break; // ISC (d,x)
+        case 0xE7: isc(zeroPage());       targetCycles += 5; break; // ISC d
+        case 0xEB: sbc(immediate());      targetCycles += 2; break; // SBC #i
+        case 0xEF: isc(absolute());       targetCycles += 6; break; // ISC a
+        case 0xF3: isc(indirectY(false)); targetCycles += 8; break; // ISC (d),y
+        case 0xF7: isc(zeroPageX());      targetCycles += 6; break; // ISC d,x
+        case 0xFB: isc(absoluteY(false)); targetCycles += 7; break; // ISC a,y
+        case 0xFF: isc(absoluteX(false)); targetCycles += 7; break; // ISC a,x
     }
 
     programCounter++;
