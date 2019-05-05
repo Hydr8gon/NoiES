@@ -136,9 +136,9 @@ int main(int argc, char **argv)
         for (int i = 0; i < 8; i++)
         {
             if (pressed & keyMap[i])
-                core::pressKey(i);
+                core::pressKey(0, i);
             else if (released & keyMap[i])
-                core::releaseKey(i);
+                core::releaseKey(0, i);
         }
 
         if (pressed & keyMap[8]) // Save state

@@ -114,16 +114,16 @@ void runCycle()
     ++globalCycles %= 6;
 }
 
-void pressKey(uint8_t key)
+void pressKey(uint8_t pad, uint8_t key)
 {
     // Set the bit corresponding to the pressed key
-    cpu::inputMask |= 1 << key;
+    cpu::inputMasks[pad] |= 1 << key;
 }
 
-void releaseKey(uint8_t key)
+void releaseKey(uint8_t pad, uint8_t key)
 {
     // Clear the bit corresponding to the released key
-    cpu::inputMask &= ~(1 << key);
+    cpu::inputMasks[pad] &= ~(1 << key);
 }
 
 void saveState()

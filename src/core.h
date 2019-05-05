@@ -41,8 +41,8 @@ void closeRom();
 
 void runCycle();
 
-void pressKey(uint8_t key);
-void releaseKey(uint8_t key);
+void pressKey(uint8_t pad, uint8_t key);
+void releaseKey(uint8_t pad, uint8_t key);
 
 void saveState();
 void loadState();

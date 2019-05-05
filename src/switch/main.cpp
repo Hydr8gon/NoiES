@@ -360,18 +360,21 @@ int main(int argc, char **argv)
     while (appletMainLoop())
     {
         hidScanInput();
-        u32 pressed = hidKeysDown(CONTROLLER_P1_AUTO);
-        u32 released = hidKeysUp(CONTROLLER_P1_AUTO);
+        u64 pressed[] = { hidKeysDown(CONTROLLER_P1_AUTO), hidKeysDown(CONTROLLER_PLAYER_2) };
+        u64 released[] = { hidKeysUp(CONTROLLER_P1_AUTO), hidKeysUp(CONTROLLER_PLAYER_2) };
 
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 2; i++)
         {
-            if (pressed & keyMap[i])
-                core::pressKey(i);
-            else if (released & keyMap[i])
-                core::releaseKey(i);
+            for (int j = 0; j < 8; j++)
+            {
+                if (pressed[i] & keyMap[j])
+                    core::pressKey(i, j);
+                else if (released[i] & keyMap[j])
+                    core::releaseKey(i, j);
+            }
         }
 
-        if (pressed & keyMap[8])
+        if (pressed[0] & keyMap[8])
         {
             if (!pauseMenu())
                 break;

@@ -37,7 +37,8 @@ uint8_t flags; // NVBBDIZC
 uint8_t stackPointer;
 bool interrupts[3]; // NMI, RST, IRQ
 
-uint8_t inputMask, inputShift;
+uint8_t inputMasks[2];
+uint8_t inputShifts[2];
 
 const vector<core::StateItem> stateItems =
 {
@@ -51,7 +52,7 @@ const vector<core::StateItem> stateItems =
     { &flags,          sizeof(flags)          },
     { &stackPointer,   sizeof(stackPointer)   },
     { interrupts,      sizeof(interrupts)     },
-    { &inputShift,     sizeof(inputShift)     }
+    { inputShifts,     sizeof(inputShifts)    }
 };
 
 void reset()
@@ -64,7 +65,8 @@ void reset()
     flags         = 0x24;
     stackPointer  = 0xFF;
     interrupts[1] = true;
-    inputMask     = 0;
+    inputMasks[0] = 0;
+    inputMasks[1] = 0;
 }
 
 uint8_t memoryRead(uint8_t *src)
@@ -81,11 +83,12 @@ uint8_t memoryRead(uint8_t *src)
     else if (address >= 0x2008 && address < 0x4000)
         address = 0x2000 + address % 8;
 
-    if (address == 0x4016) // JOYPAD1
+    if (address == 0x4016 || address == 0x4017) // JOYPAD1 or JOYPAD2
     {
         // Read button status 1 bit at a time
-        uint8_t value = (inputMask & (1 << inputShift)) ? 0x41 : 0x40;
-        ++inputShift %= 8;
+        uint8_t i = address - 0x4016;
+        uint8_t value = (inputMasks[i] & (1 << inputShifts[i])) ? 0x41 : 0x40;
+        ++inputShifts[i] %= 8;
         return value;
     }
 
@@ -117,9 +120,9 @@ void memoryWrite(uint8_t *dst, uint8_t src)
 
     if (address == 0x4016) // JOYPAD1
     {
-        // Reset the input shift when the strobe bit is set
+        // Reset the input shifts when the strobe bit is set
         if (src & 0x01)
-            inputShift = 0;
+            inputShifts[0] = inputShifts[1] = 0;
         return;
     }
 

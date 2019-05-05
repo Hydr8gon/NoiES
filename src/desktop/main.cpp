@@ -84,7 +84,7 @@ void keyDown(unsigned char key, int x, int y)
     for (int i = 0; i < 8; i++)
     {
         if (key == keyMap[i][0])
-            core::pressKey(i);
+            core::pressKey(0, i);
     }
 }
 
@@ -93,7 +93,7 @@ void keyUp(unsigned char key, int x, int y)
     for (int i = 0; i < 8; i++)
     {
         if (key == keyMap[i][0])
-            core::releaseKey(i);
+            core::releaseKey(0, i);
     }
 }
 
