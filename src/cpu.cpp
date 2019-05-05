@@ -834,12 +834,12 @@ void runCycle()
 
         case 0xA0: ld_(&registerY, immediate());     targetCycles += 2; break; // LDY #i
         case 0xA4: ld_(&registerY, zeroPage());      targetCycles += 3; break; // LDY d
-        case 0xA8: t__(&accumulator, &registerY); targetCycles += 2; break; // TAY
+        case 0xA8: t__(&accumulator, &registerY);    targetCycles += 2; break; // TAY
         case 0xAC: ld_(&registerY, absolute());      targetCycles += 4; break; // LDY a
-        case 0xB0: b__( (flags & 0x01)); targetCycles += 2; break; // BCS *+d
+        case 0xB0: b__( (flags & 0x01));             targetCycles += 2; break; // BCS *+d
         case 0xB4: ld_(&registerY, zeroPageX());     targetCycles += 4; break; // LDY d,x
         case 0xBC: ld_(&registerY, absoluteX(true)); targetCycles += 4; break; // LDY a,x
-        case 0xB8: cl_(0x40); targetCycles += 2; break; // CLV
+        case 0xB8: cl_(0x40);                        targetCycles += 2; break; // CLV
 
         case 0xA1: ld_(&accumulator, indirectX());     targetCycles += 6; break; // LDA (d,x)
         case 0xA5: ld_(&accumulator, zeroPage());      targetCycles += 3; break; // LDA d

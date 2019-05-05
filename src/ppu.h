@@ -24,7 +24,7 @@ namespace ppu
 {
 
 extern uint32_t displayBuffer[256 * 240];
-extern void    *displayMutex;
+extern void *displayMutex;
 
 extern uint8_t memory[0x4000];
 extern uint8_t mirrorMode;
@@ -33,7 +33,7 @@ void reset();
 void runCycle();
 
 uint8_t registerRead(uint16_t address);
-void    registerWrite(uint16_t address, uint8_t value);
+void registerWrite(uint16_t address, uint8_t value);
 
 void saveState(FILE *state);
 void loadState(FILE *state);

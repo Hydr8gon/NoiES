@@ -24,12 +24,6 @@
 #include "../config.h"
 #include "../mutex.h"
 
-typedef struct
-{
-    vector<string> names;
-    uint32_t *value;
-} SettingValue;
-
 bool paused;
 Thread coreThread, audioThread;
 
@@ -72,7 +66,7 @@ const vector<string> controlNames =
     "Pause Menu"
 };
 
-const vector<string> controlValues =
+const vector<string> controlSubnames =
 {
     "A Button", "B Button", "X Button", "Y Button",
     "Left Stick Click", "Right Stick Click",
@@ -90,11 +84,18 @@ const vector<string> settingNames =
     "Screen Filtering"
 };
 
-const vector<SettingValue> settingValues =
+const vector<vector<string>> settingSubnames =
 {
-    { { "Off", "On" }, &config::disableSpriteLimit },
-    { { "Off", "On" }, &config::frameLimiter       },
-    { { "Off", "On" }, &screenFiltering            }
+    { "Off", "On" },
+    { "Off", "On" },
+    { "Off", "On" }
+};
+
+const vector<u32*> settingValues =
+{
+    &config::disableSpriteLimit,
+    &config::frameLimiter,
+    &screenFiltering
 };
 
 const vector<string> pauseNames =
@@ -148,7 +149,9 @@ void stopCore()
 {
     paused = true;
     threadWaitForExit(&coreThread);
+    threadClose(&coreThread);
     threadWaitForExit(&audioThread);
+    threadClose(&audioThread);
     audoutStopAudioOut();
     audoutExit();
     appletUnlockExit();
@@ -171,14 +174,14 @@ void controlsMenu()
             {
                 string subitem;
                 int count = 0;
-                for (unsigned int j = 0; j < controlValues.size(); j++)
+                for (unsigned int j = 0; j < controlSubnames.size(); j++)
                 {
                     if (keyMap[i] & BIT(j))
                     {
                         count++;
                         if (count < 5)
                         {
-                            subitem += controlValues[j] + ", ";
+                            subitem += controlSubnames[j] + ", ";
                         }
                         else
                         {
@@ -219,13 +222,15 @@ void settingsMenu()
     {
         vector<string> settingSubitems;
         for (unsigned int i = 0; i < settingNames.size(); i++)
-            settingSubitems.push_back(settingValues[i].names[*settingValues[i].value]);
+            settingSubitems.push_back(settingSubnames[i][*settingValues[i]]);
 
         u32 pressed = menuScreen("Settings", "", "Controls", {}, settingNames, settingSubitems, &selection);
 
         if (pressed & KEY_A)
         {
-            *settingValues[selection].value = !(*settingValues[selection].value);
+            (*settingValues[selection])++;
+            if (*settingValues[selection] >= settingSubnames[selection].size())
+                *settingValues[selection] = 0;
         }
         else if (pressed & KEY_B)
         {

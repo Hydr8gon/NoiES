@@ -36,7 +36,7 @@ typedef struct
 
 extern uint8_t globalCycles;
 
-int  loadRom(string filename);
+int loadRom(string filename);
 void closeRom();
 
 void runCycle();
