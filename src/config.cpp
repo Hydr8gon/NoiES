@@ -26,13 +26,13 @@
 namespace config
 {
 
-uint32_t disableSpriteLimit = 0;
 uint32_t frameLimiter = 1;
+uint32_t disableSpriteLimit = 0;
 
 vector<Setting> settings =
 {
-    { "disableSpriteLimit", &disableSpriteLimit, false },
-    { "frameLimiter",       &frameLimiter,       false }
+    { "frameLimiter",       &frameLimiter,       false },
+    { "disableSpriteLimit", &disableSpriteLimit, false }
 };
 
 void load(vector<Setting> platformSettings)

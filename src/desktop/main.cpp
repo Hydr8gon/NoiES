@@ -30,11 +30,13 @@
 bool requestSave, requestLoad;
 
 uint32_t screenFiltering = 0;
+uint32_t cropOverscan = 0;
 string keyMap[] = { "l", "k", "g", "h", "w", "s", "a", "d" };
 
 const vector<config::Setting> platformSettings =
 {
     { "screenFiltering", &screenFiltering, false },
+    { "cropOverscan",    &cropOverscan,    false },
     { "keyA",            &keyMap[0],       true  },
     { "keyB",            &keyMap[1],       true  },
     { "keySelect",       &keyMap[2],       true  },
@@ -67,7 +69,10 @@ void runCore()
 void draw()
 {
     mutex::lock(ppu::displayMutex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, ppu::displayBuffer);
+    if (cropOverscan)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 224, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, &ppu::displayBuffer[256 * 8]);
+    else
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 256, 240, 0, GL_RGBA, GL_UNSIGNED_INT_8_8_8_8, ppu::displayBuffer);
     mutex::unlock(ppu::displayMutex);
     glBegin(GL_QUADS);
     glTexCoord2i(1, 1); glVertex2f( 1, -1);
@@ -134,7 +139,7 @@ int main(int argc, char **argv)
         return 1;
 
     glutInit(&argc, argv);
-    glutInitWindowSize(256, 240);
+    glutInitWindowSize(256, (cropOverscan ? 224 : 240));
     glutCreateWindow("NoiES");
     glEnable(GL_TEXTURE_2D);
 

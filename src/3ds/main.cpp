@@ -29,23 +29,25 @@
 bool running = true;
 bool requestSave, requestLoad;
 
+u32 cropOverscan = 0;
 u32 keyMap[] = { KEY_A, KEY_B, KEY_SELECT, KEY_START, KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_L, KEY_R, KEY_TOUCH };
 string romPath = "sdmc:/3ds/noies/game.nes";
 
 const vector<config::Setting> platformSettings =
 {
-    { "keyA",      &keyMap[0],  false },
-    { "keyB",      &keyMap[1],  false },
-    { "keySelect", &keyMap[2],  false },
-    { "keyStart",  &keyMap[3],  false },
-    { "keyUp",     &keyMap[4],  false },
-    { "keyDown",   &keyMap[5],  false },
-    { "keyLeft",   &keyMap[6],  false },
-    { "keyRight",  &keyMap[7],  false },
-    { "keySave",   &keyMap[8],  false },
-    { "keyLoad",   &keyMap[9],  false },
-    { "keyExit",   &keyMap[10], false },
-    { "romPath",   &romPath,    true  }
+    { "cropOverscan", &cropOverscan, false },
+    { "keyA",         &keyMap[0],    false },
+    { "keyB",         &keyMap[1],    false },
+    { "keySelect",    &keyMap[2],    false },
+    { "keyStart",     &keyMap[3],    false },
+    { "keyUp",        &keyMap[4],    false },
+    { "keyDown",      &keyMap[5],    false },
+    { "keyLeft",      &keyMap[6],    false },
+    { "keyRight",     &keyMap[7],    false },
+    { "keySave",      &keyMap[8],    false },
+    { "keyLoad",      &keyMap[9],    false },
+    { "keyExit",      &keyMap[10],   false },
+    { "romPath",      &romPath,      true  }
 };
 
 void runCore(void *args)
@@ -161,7 +163,7 @@ int main(int argc, char **argv)
         }
 
         mutex::lock(ppu::displayMutex);
-        for (int y = 0; y < 240; y++)
+        for (int y = (cropOverscan ? 8 : 0); y < (cropOverscan ? 232 : 240); y++)
         {
             for (int x = 0; x < 256; x++)
             {

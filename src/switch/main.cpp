@@ -28,6 +28,7 @@ bool paused;
 Thread coreThread, audioThread;
 
 u32 screenFiltering = 0;
+u32 cropOverscan = 0;
 string lastPath = "sdmc:/";
 
 u32 keyMap[] =
@@ -41,6 +42,7 @@ u32 keyMap[] =
 const vector<config::Setting> platformSettings =
 {
     { "screenFiltering", &screenFiltering, false },
+    { "cropOverscan",    &cropOverscan,    false },
     { "keyA",            &keyMap[0],       false },
     { "keyB",            &keyMap[1],       false },
     { "keySelect",       &keyMap[2],       false },
@@ -79,13 +81,15 @@ const vector<string> controlSubnames =
 
 const vector<string> settingNames =
 {
-    "Disable Sprite Limit",
     "Frame Limiter",
-    "Screen Filtering"
+    "Disable Sprite Limit",
+    "Screen Filtering",
+    "Crop Overscan"
 };
 
 const vector<vector<string>> settingSubnames =
 {
+    { "Off", "On" },
     { "Off", "On" },
     { "Off", "On" },
     { "Off", "On" }
@@ -93,9 +97,10 @@ const vector<vector<string>> settingSubnames =
 
 const vector<u32*> settingValues =
 {
-    &config::disableSpriteLimit,
     &config::frameLimiter,
-    &screenFiltering
+    &config::disableSpriteLimit,
+    &screenFiltering,
+    &cropOverscan
 };
 
 const vector<string> pauseNames =
@@ -382,7 +387,10 @@ int main(int argc, char **argv)
 
         clearDisplay(0);
         mutex::lock(ppu::displayMutex);
-        drawImage(ppu::displayBuffer, 256, 240, false, 256, 0, 768, 720, 0);
+        if (cropOverscan)
+            drawImage(&ppu::displayBuffer[256 * 8], 256, 224, false, 228.5, 0, 823, 720, 0);
+        else
+            drawImage(ppu::displayBuffer, 256, 240, false, 256, 0, 768, 720, 0);
         mutex::unlock(ppu::displayMutex);
         refreshDisplay();
     }

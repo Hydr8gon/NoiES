@@ -35,8 +35,8 @@ typedef struct
     bool isString;
 } Setting;
 
-extern uint32_t disableSpriteLimit;
 extern uint32_t frameLimiter;
+extern uint32_t disableSpriteLimit;
 
 void load(vector<Setting> platformSettings);
 void save();
