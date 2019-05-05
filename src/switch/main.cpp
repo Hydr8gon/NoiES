@@ -27,8 +27,12 @@
 bool paused;
 Thread coreThread, audioThread;
 
+u32 *bufferPointer;
+int bufferHeight, screenWidth, screenOffsetX;
+
 u32 screenFiltering = 0;
 u32 cropOverscan = 0;
+u32 aspectRatio = 0;
 string lastPath = "sdmc:/";
 
 u32 keyMap[] =
@@ -43,6 +47,7 @@ const vector<config::Setting> platformSettings =
 {
     { "screenFiltering", &screenFiltering, false },
     { "cropOverscan",    &cropOverscan,    false },
+    { "aspectRatio",     &aspectRatio,     false },
     { "keyA",            &keyMap[0],       false },
     { "keyB",            &keyMap[1],       false },
     { "keySelect",       &keyMap[2],       false },
@@ -84,7 +89,8 @@ const vector<string> settingNames =
     "Frame Limiter",
     "Disable Sprite Limit",
     "Screen Filtering",
-    "Crop Overscan"
+    "Crop Overscan",
+    "Aspect Ratio"
 };
 
 const vector<vector<string>> settingSubnames =
@@ -92,7 +98,8 @@ const vector<vector<string>> settingSubnames =
     { "Off", "On" },
     { "Off", "On" },
     { "Off", "On" },
-    { "Off", "On" }
+    { "Off", "On" },
+    { "Pixel Perfect", "4:3", "16:9" }
 };
 
 const vector<u32*> settingValues =
@@ -100,7 +107,8 @@ const vector<u32*> settingValues =
     &config::frameLimiter,
     &config::disableSpriteLimit,
     &screenFiltering,
-    &cropOverscan
+    &cropOverscan,
+    &aspectRatio
 };
 
 const vector<string> pauseNames =
@@ -136,6 +144,30 @@ void audioOutput(void *args)
     }
 }
 
+void setScreenLayout()
+{
+    if (cropOverscan)
+    {
+        bufferPointer = &ppu::displayBuffer[256 * 8];
+        bufferHeight = 224;
+    }
+    else
+    {
+        bufferPointer = ppu::displayBuffer;
+        bufferHeight = 240;
+    }
+
+    if (aspectRatio == 0) // Pixel Perfect
+        screenWidth = (cropOverscan ? 823 : 768);
+    else if (aspectRatio == 1) // 4:3
+        screenWidth = 960;
+    else // 16:9
+        screenWidth = 1280;
+
+    screenOffsetX = (1280 - screenWidth) / 2;
+    setTextureFiltering(screenFiltering);
+}
+
 void startCore()
 {
     paused = false;
@@ -143,7 +175,7 @@ void startCore()
     audoutInitialize();
     audoutStartAudioOut();
     setupAudioBuffer();
-    setTextureFiltering(screenFiltering);
+    setScreenLayout();
     threadCreate(&coreThread, runCore, NULL, 0x8000, 0x30, 1);
     threadStart(&coreThread);
     threadCreate(&audioThread, audioOutput, NULL, 0x8000, 0x30, 0);
@@ -387,10 +419,7 @@ int main(int argc, char **argv)
 
         clearDisplay(0);
         mutex::lock(ppu::displayMutex);
-        if (cropOverscan)
-            drawImage(&ppu::displayBuffer[256 * 8], 256, 224, false, 228.5, 0, 823, 720, 0);
-        else
-            drawImage(ppu::displayBuffer, 256, 240, false, 256, 0, 768, 720, 0);
+        drawImage(bufferPointer, 256, bufferHeight, false, screenOffsetX, 0, screenWidth, 720, 0);
         mutex::unlock(ppu::displayMutex);
         refreshDisplay();
     }
