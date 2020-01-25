@@ -176,9 +176,9 @@ void startCore()
     audoutStartAudioOut();
     setupAudioBuffer();
     setScreenLayout();
-    threadCreate(&coreThread, runCore, NULL, 0x8000, 0x30, 1);
+    threadCreate(&coreThread, runCore, NULL, NULL, 0x8000, 0x30, 1);
     threadStart(&coreThread);
-    threadCreate(&audioThread, audioOutput, NULL, 0x8000, 0x30, 0);
+    threadCreate(&audioThread, audioOutput, NULL, NULL, 0x8000, 0x30, 0);
     threadStart(&audioThread);
 }
 
